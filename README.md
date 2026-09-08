@@ -6,6 +6,10 @@ A Darktide Mod Framework mod with an auspex-style selector for eight games in th
 
 Install DMF, place the `MourningstarWaitingGames` folder in Darktide's mods directory, and add `MourningstarWaitingGames` to `mod_load_order.txt`.
 
+## Download
+
+Download `MourningstarWaitingGames.zip` from the [latest GitHub release](../../releases/latest). Do not use GitHub's source-code archives for installation.
+
 ## License
 
 Licensed under the [MIT License](LICENSE).
