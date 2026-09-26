@@ -2,6 +2,7 @@ local mod = get_mod("MourningstarWaitingGames")
 local UIWidget = require("scripts/managers/ui/ui_widget")
 local UIWorkspaceSettings = require("scripts/settings/ui/ui_workspace_settings")
 local AuspexFrame = mod:io_dofile("MourningstarWaitingGames/scripts/mods/MourningstarWaitingGames/MourningstarWaitingGames_auspex_frame")
+local Gfx = mod:io_dofile("MourningstarWaitingGames/scripts/mods/MourningstarWaitingGames/MourningstarWaitingGames_canvas")
 
 local math_abs = math.abs
 local math_cos = math.cos
@@ -9,6 +10,7 @@ local math_floor = math.floor
 local math_max = math.max
 local math_min = math.min
 local math_pi = math.pi
+local math_random = math.random
 local math_sin = math.sin
 local math_sqrt = math.sqrt
 
@@ -16,20 +18,10 @@ local RENDER_SIZE = 600
 local VIEW_W = 600
 local VIEW_H = 480
 local HORIZON = 214
-local COLUMN_COUNT = 150
+local COLUMN_COUNT = 200
 local COLUMN_W = VIEW_W / COLUMN_COUNT
 local FOV = 1.18
 local PROJ_PLANE = (VIEW_W * 0.5) / math.tan(FOV * 0.5)
-local CEILING_BANDS = 16
-local FLOOR_BANDS = 18
-local GRID_LINES = 28
-local ARCH_WIDGETS = 30
-local SPRITE_RECTS = 260
-local SPRITE_CIRCLES = 100
-local EFFECT_WIDGETS = 90
-local MOTE_WIDGETS = 52
-local SPEED_LINE_WIDGETS = 24
-local GAUNTLET_WIDGETS = 18
 
 local COLORS = {
     void = { 255, 1, 3, 8 },
@@ -149,42 +141,6 @@ local scenegraph = {
         size = { 580, 22 }, position = { 0, 284, 35 },
     },
 }
-
-local function rect_def(parent)
-    return UIWidget.create_definition({
-        {
-            pass_type = "texture",
-            style_id = "gfx",
-            value = "content/ui/materials/backgrounds/default_square",
-            style = { hdr = true, color = { 0, 0, 0, 0 } },
-        },
-    }, parent or "game_area", nil, { 4, 4 })
-end
-
-local function circle_def(size, parent)
-    return UIWidget.create_definition({
-        {
-            pass_type = "circle",
-            style_id = "gfx",
-            style = { color = { 0, 0, 0, 0 } },
-        },
-    }, parent or "game_area", nil, { size or 8, size or 8 })
-end
-
-local function line_def()
-    return UIWidget.create_definition({
-        {
-            pass_type = "triangle",
-            style_id = "tri1",
-            style = { color = { 0, 0, 0, 0 }, triangle_corners = { { 0, 0 }, { 0, 0 }, { 0, 0 } } },
-        },
-        {
-            pass_type = "triangle",
-            style_id = "tri2",
-            style = { color = { 0, 0, 0, 0 }, triangle_corners = { { 0, 0 }, { 0, 0 }, { 0, 0 } } },
-        },
-    }, "game_area", nil, { 1, 1 })
-end
 
 local function text_def(parent, font_size, color)
     return UIWidget.create_definition({
@@ -367,211 +323,6 @@ local function set_color(destination, source, alpha)
     destination[4] = source[4]
 end
 
-local function color_alpha(color, alpha)
-    return math_max(0, math_min(color[1], alpha))
-end
-
-local function clear_rect(widget)
-    widget.style.gfx.color[1] = 0
-end
-
-local function clear_circle(widget)
-    widget.style.gfx.color[1] = 0
-end
-
-local function clear_line(widget)
-    widget.style.tri1.color[1] = 0
-    widget.style.tri2.color[1] = 0
-end
-
-local function draw_rect(widget, x, y, width, height, color, alpha, z)
-    widget.offset[1] = x
-    widget.offset[2] = y
-    widget.offset[3] = z or 5
-    widget.content.size[1] = width
-    widget.content.size[2] = height
-    set_color(widget.style.gfx.color, color, alpha)
-end
-
-local function draw_world_rect(widget, x, y, width, height, color, alpha, z)
-    if x < 0 then
-        width = width + x
-        x = 0
-    end
-    if y < 0 then
-        height = height + y
-        y = 0
-    end
-    if x + width > VIEW_W then width = VIEW_W - x end
-    if y + height > VIEW_H then height = VIEW_H - y end
-
-    if width <= 0 or height <= 0 then
-        clear_rect(widget)
-        return false
-    end
-
-    draw_rect(widget, x, y, width, height, color, alpha, z)
-    return true
-end
-
-local function draw_circle(widget, x, y, size, color, alpha, z)
-    if x + size < 0 or x - size > VIEW_W or y + size < 0 or y - size > VIEW_H then
-        clear_circle(widget)
-        return false
-    end
-
-    widget.offset[1] = x - size * 0.5
-    widget.offset[2] = y - size * 0.5
-    widget.offset[3] = z or 5
-    widget.content.size[1] = size
-    widget.content.size[2] = size
-    set_color(widget.style.gfx.color, color, alpha)
-
-    return true
-end
-
-local function clip_line(x1, y1, x2, y2)
-    local dx = x2 - x1
-    local dy = y2 - y1
-    local t0 = 0
-    local t1 = 1
-
-    local function edge(p, q)
-        if p == 0 then return q >= 0 end
-
-        local ratio = q / p
-
-        if p < 0 then
-            if ratio > t1 then return false end
-            if ratio > t0 then t0 = ratio end
-        else
-            if ratio < t0 then return false end
-            if ratio < t1 then t1 = ratio end
-        end
-
-        return true
-    end
-
-    if edge(-dx, x1) and edge(dx, VIEW_W - x1) and edge(-dy, y1) and edge(dy, VIEW_H - y1) then
-        return x1 + dx * t0, y1 + dy * t0, x1 + dx * t1, y1 + dy * t1
-    end
-
-    return nil
-end
-
-local function draw_line(widget, x1, y1, x2, y2, thickness, color, alpha, z)
-    x1, y1, x2, y2 = clip_line(x1, y1, x2, y2)
-
-    if not x1 then
-        clear_line(widget)
-        return false
-    end
-
-    local dx = x2 - x1
-    local dy = y2 - y1
-    local length = math_sqrt(dx * dx + dy * dy)
-
-    if length <= 0.1 then
-        clear_line(widget)
-        return false
-    end
-
-    local half = thickness * 0.5
-    local nx = -dy / length * half
-    local ny = dx / length * half
-    local x1a, y1a = x1 + nx, y1 + ny
-    local x1b, y1b = x1 - nx, y1 - ny
-    local x2a, y2a = x2 + nx, y2 + ny
-    local x2b, y2b = x2 - nx, y2 - ny
-    local triangle_one = widget.style.tri1.triangle_corners
-    local triangle_two = widget.style.tri2.triangle_corners
-
-    widget.offset[1] = 0
-    widget.offset[2] = 0
-    widget.offset[3] = z or 5
-    triangle_one[1][1], triangle_one[1][2] = x1a, y1a
-    triangle_one[2][1], triangle_one[2][2] = x2a, y2a
-    triangle_one[3][1], triangle_one[3][2] = x2b, y2b
-    triangle_two[1][1], triangle_two[1][2] = x1a, y1a
-    triangle_two[2][1], triangle_two[2][2] = x2b, y2b
-    triangle_two[3][1], triangle_two[3][2] = x1b, y1b
-    set_color(widget.style.tri1.color, color, alpha)
-    set_color(widget.style.tri2.color, color, alpha)
-
-    return true
-end
-
-function RaycasterView:init(settings, context)
-    RaycasterView.super.init(self, definitions, settings, context)
-
-    self._game = context.game
-    self._no_cursor = true
-    self._last_health = self._game and self._game:health() or 100
-    self._last_dash = false
-    self._damage_flash = 0
-    self._dash_flash = 0
-    self._zbuffer = {}
-
-    self._ceiling_widgets = {}
-    for i = 1, CEILING_BANDS do
-        self._ceiling_widgets[i] = UIWidget.init("purge_ceiling_" .. i, rect_def())
-    end
-
-    self._floor_widgets = {}
-    for i = 1, FLOOR_BANDS do
-        self._floor_widgets[i] = UIWidget.init("purge_floor_" .. i, rect_def())
-    end
-
-    self._grid_widgets = {}
-    for i = 1, GRID_LINES do
-        self._grid_widgets[i] = UIWidget.init("purge_grid_" .. i, line_def())
-    end
-
-    self._arch_widgets = {}
-    for i = 1, ARCH_WIDGETS do
-        self._arch_widgets[i] = UIWidget.init("purge_arch_" .. i, line_def())
-    end
-
-    self._wall_widgets = {}
-    self._wall_details = {}
-    for i = 1, COLUMN_COUNT do
-        self._wall_widgets[i] = UIWidget.init("purge_wall_" .. i, rect_def())
-        for detail = 1, 3 do
-            local index = (i - 1) * 3 + detail
-            self._wall_details[index] = UIWidget.init("purge_masonry_" .. index, rect_def())
-        end
-    end
-
-    self._sprite_rects = {}
-    for i = 1, SPRITE_RECTS do
-        self._sprite_rects[i] = UIWidget.init("purge_sprite_rect_" .. i, rect_def())
-    end
-
-    self._sprite_circles = {}
-    for i = 1, SPRITE_CIRCLES do
-        self._sprite_circles[i] = UIWidget.init("purge_sprite_circle_" .. i, circle_def(8))
-    end
-
-    self._effect_widgets = {}
-    for i = 1, EFFECT_WIDGETS do
-        self._effect_widgets[i] = UIWidget.init("purge_effect_" .. i, circle_def(5))
-    end
-
-    self._mote_widgets = {}
-    for i = 1, MOTE_WIDGETS do
-        self._mote_widgets[i] = UIWidget.init("purge_mote_" .. i, circle_def(4))
-    end
-
-    self._speed_line_widgets = {}
-    for i = 1, SPEED_LINE_WIDGETS do
-        self._speed_line_widgets[i] = UIWidget.init("purge_speed_" .. i, line_def())
-    end
-
-    self._gauntlet_widgets = {}
-    for i = 1, GAUNTLET_WIDGETS do
-        self._gauntlet_widgets[i] = UIWidget.init("purge_gauntlet_" .. i, rect_def())
-    end
-end
 
 function RaycasterView:dialogue_system() return nil end
 function RaycasterView:is_using_input() return false end
@@ -611,7 +362,7 @@ function RaycasterView:_draw_widgets(dt, t, input_service, ui_renderer, render_s
     RaycasterView.super._draw_widgets(self, dt, t, input_service, ui_renderer, render_settings)
 
     if self._game then
-        self:_draw_dynamic(ui_renderer)
+        self:_draw_dynamic(ui_renderer, dt)
     end
 end
 
@@ -718,8 +469,113 @@ function RaycasterView:_update_hud()
     end
 end
 
-function RaycasterView:_draw_dynamic(ui_renderer)
+
+local TAN_HALF_FOV = math.tan(FOV * 0.5)
+local FLOOR_BANDS = 34
+local MAX_PLANE_DISTANCE = 13
+local BRICK_COURSES = 6
+
+local RC = {
+    mortar = { 255, 0, 0, 0 },
+    torch = { 255, 255, 170, 70 },
+    torch_hot = { 255, 255, 240, 190 },
+    ember = { 255, 255, 120, 40 },
+    lead = { 255, 8, 6, 10 },
+    shadow = { 255, 0, 0, 0 },
+    robe = { 255, 34, 16, 32 },
+    robe_light = { 255, 86, 40, 78 },
+    eye = { 255, 255, 60, 40 },
+    bone = { 255, 205, 196, 170 },
+    steel = { 255, 72, 82, 90 },
+    steel_light = { 255, 150, 165, 172 },
+}
+
+local plane_breaks = {}
+local sprite_queue = {}
+local glass_color = { 255, 0, 0, 0 }
+local torch_lookup = {}
+
+local function hash(a, b, c)
+    local v = math_sin(a * 127.1 + b * 311.7 + (c or 0) * 74.7) * 43758.5453
+    return v - math_floor(v)
+end
+
+local function mix_channel(a, b, t)
+    return a + (b - a) * t
+end
+
+function RaycasterView:init(settings, context)
+    RaycasterView.super.init(self, definitions, settings, context)
+
+    self._game = context.game
+    self._no_cursor = true
+    self._last_health = self._game and self._game:health() or 100
+    self._last_dash = false
+    self._damage_flash = 0
+    self._dash_flash = 0
+    self._zbuffer = {}
+    self._canvas = Gfx.Canvas.new(VIEW_W, VIEW_H, 9000)
+    self._particles = Gfx.Particles.new(200)
+    self._torches = {}
+    self._time = 0
+    self._last_sigils = nil
+    self._last_score = nil
+    self._pickup_flash = 0
+    self._pickup_color = COLORS.gold
+
+    -- The reworked renderer draws its own vignette.
+    for _, name in ipairs({ "vignette_top", "vignette_bottom", "vignette_left", "vignette_right" }) do
+        local widget = self._widgets_by_name[name]
+        if widget then
+            for _, pass_style in pairs(widget.style) do
+                if pass_style.color then pass_style.color[1] = 0 end
+            end
+        end
+    end
+end
+
+function RaycasterView:_project(x, y, horizon, sx)
+    local player = self._game:player()
+    local cosine = math_cos(player.angle)
+    local sine = math_sin(player.angle)
+    local dx = x - player.x
+    local dy = y - player.y
+    local forward = dx * cosine + dy * sine
+
+    if forward <= 0.12 then return nil end
+
+    local side = -dx * sine + dy * cosine
+    local screen_x = VIEW_W * 0.5 + side / forward * PROJ_PLANE + sx
+    local floor_y = horizon + PROJ_PLANE * 0.5 / forward
+
+    return screen_x, floor_y, forward
+end
+
+function RaycasterView:_detect_events(horizon, sx)
     local game = self._game
+    local sigils = game:sigils()
+    local score = game:score()
+
+    if self._last_sigils and sigils > self._last_sigils then
+        self._pickup_flash = 1
+        self._pickup_color = COLORS.gold
+        self._particles:burst(VIEW_W * 0.5, horizon + 60, 30, 80, 320, 0.4, 1, 2, COLORS.gold_hot, "spark", 2, 120)
+        self._particles:shockwave(VIEW_W * 0.5, horizon + 40, 220, 0.6, COLORS.gold, 4)
+    elseif self._last_score and score > self._last_score + 40 then
+        self._pickup_flash = math_max(self._pickup_flash, 0.5)
+        self._pickup_color = COLORS.corruption_hot
+    end
+
+    self._last_sigils = sigils
+    self._last_score = score
+end
+
+function RaycasterView:_draw_dynamic(ui_renderer, dt)
+    local game = self._game
+    local canvas = self._canvas
+    dt = math_min(dt or 0.016, 0.05)
+    self._time = self._time + dt
+
     local time = game:time()
     local shake = game:shake()
     local dash = game:dash_active() and 1 or 0
@@ -730,499 +586,687 @@ function RaycasterView:_draw_dynamic(ui_renderer)
     local theme = THEMES[game:theme()] or THEMES[1]
     local entities = game:render_entities()
 
-    self:_draw_floor_and_ceiling(ui_renderer, theme, horizon, sx)
-    self:_draw_cathedral_silhouette(ui_renderer, theme, horizon, sx)
-    self:_draw_walls(ui_renderer, theme, horizon, sx)
-    self:_draw_entities(ui_renderer, entities, theme, horizon, sx)
-    self:_draw_effects(ui_renderer, entities.effects, horizon, sx)
-    self:_draw_motes(ui_renderer, theme, horizon, sx)
-    self:_draw_speed_lines(ui_renderer, theme)
-    self:_draw_gauntlets(ui_renderer, theme)
+    self:_detect_events(horizon, sx)
+    self._particles:update(dt)
+    self._pickup_flash = math_max(0, self._pickup_flash - dt * 1.6)
+
+    if not canvas:begin(ui_renderer, self:_scenegraph_world_position("game_area")) then return end
+
+    self._flicker = 0.9 + math_sin(self._time * 13) * 0.04 + math_sin(self._time * 29.3) * 0.03
+
+    self:_draw_sky(canvas, theme, horizon, sx)
+    self:_draw_plane(canvas, theme, horizon, true)
+    self:_draw_plane(canvas, theme, horizon, false)
+    self:_draw_walls(canvas, theme, horizon, sx, entities.map)
+    self:_draw_torches(canvas, theme)
+    self:_draw_entities(canvas, entities, theme, horizon, sx)
+    self:_draw_effects(canvas, entities.effects, horizon, sx)
+    self:_draw_motes(canvas, theme, horizon, sx)
+    self._particles:draw(canvas, 21.5)
+    self:_draw_speed_lines(canvas, theme, horizon)
+    self:_draw_gauntlets(canvas, theme)
+    self:_draw_post(canvas, theme, horizon)
+
+    canvas:finish()
 end
 
-function RaycasterView:_draw_floor_and_ceiling(ui_renderer, theme, horizon, sx)
-    local ceiling_height = math_max(1, horizon)
-    local ceiling_band_height = ceiling_height / CEILING_BANDS
+function RaycasterView:_draw_sky(canvas, theme, horizon, sx)
+    canvas:vgradient(0, 0, VIEW_W, math_max(1, horizon), 0.5, theme.ceiling, theme.fog, 255, 255, 20)
+    canvas:vgradient(0, horizon, VIEW_W, VIEW_H - horizon, 0.5, theme.fog, theme.floor, 255, 255, 20)
 
-    for i = 1, CEILING_BANDS do
-        local widget = self._ceiling_widgets[i]
-        local color = theme.ceiling
-        local progress = i / CEILING_BANDS
-
-        draw_world_rect(widget, 0, (i - 1) * ceiling_band_height, VIEW_W, ceiling_band_height + 1, color, 255, 1)
-        for channel = 2, 4 do
-            widget.style.gfx.color[channel] = color[channel] + (theme.ceiling_hot[channel] - color[channel]) * progress * progress * 0.55
-        end
-        UIWidget.draw(widget, ui_renderer)
-    end
-
-    local floor_height = math_max(1, VIEW_H - horizon)
-    local floor_band_height = floor_height / FLOOR_BANDS
-
-    for i = 1, FLOOR_BANDS do
-        local widget = self._floor_widgets[i]
-        local color = theme.floor
-        local progress = (i - 0.5) / FLOOR_BANDS
-        local light = math_sin(progress * math_pi) * 0.48
-
-        draw_world_rect(widget, 0, horizon + (i - 1) * floor_band_height, VIEW_W, floor_band_height + 1, color, 255, 1)
-        for channel = 2, 4 do
-            widget.style.gfx.color[channel] = color[channel] + (theme.floor_hot[channel] - color[channel]) * light
-        end
-        UIWidget.draw(widget, ui_renderer)
-    end
-
+    -- Distant nave: layered gothic arches receding into fog.
     local player = self._game:player()
-    local line_index = 1
-    local scroll = (player.x * 0.31 + player.y * 0.23) % 1
-
-    for i = 1, 13 do
-        local progress = ((i - 1 + scroll) % 13 + 1) / 13
-        local y = horizon + floor_height * progress * progress
-        local widget = self._grid_widgets[line_index]
-        local alpha = 10 + math_floor(progress * 36)
-
-        draw_line(widget, 0, y, VIEW_W, y, 1.1 + progress * 1.2, theme.grid, alpha, 3)
-        UIWidget.draw(widget, ui_renderer)
-        line_index = line_index + 1
-    end
-
-    local vanishing_x = VIEW_W * 0.5 + sx * 0.4
-    local lateral_phase = ((player.x - player.y) * 46) % 92
-
-    for i = 1, 11 do
-        local endpoint_x = -170 + (i - 1) * 92 + lateral_phase
-        local widget = self._grid_widgets[line_index]
-
-        draw_line(widget, vanishing_x, horizon, endpoint_x, VIEW_H, 1.0, theme.grid, 28, 3)
-        UIWidget.draw(widget, ui_renderer)
-        line_index = line_index + 1
-    end
-
-    for i = 1, 4 do
-        local endpoint_x = -100 + (i - 1) * 265
-        local widget = self._grid_widgets[line_index]
-
-        draw_line(widget, vanishing_x, horizon, endpoint_x, 0, 1.1, theme.grid, 23, 2)
-        UIWidget.draw(widget, ui_renderer)
-        line_index = line_index + 1
-    end
-
-    for i = line_index, GRID_LINES do
-        clear_line(self._grid_widgets[i])
-    end
-end
-
-function RaycasterView:_draw_cathedral_silhouette(ui_renderer, theme, horizon, sx)
-    local player = self._game:player()
-    local spacing = 152
+    local spacing = 150
     local scroll = (player.angle / (math_pi * 2) * VIEW_W * 2.4) % spacing
 
-    for arch = 1, ARCH_WIDGETS / 6 do
-        local x = (arch - 1) * spacing - scroll + sx * 0.15
-        local spring = horizon - 82
-        local apex = horizon - 173
-        local index = (arch - 1) * 6
+    for arch = 0, 5 do
+        local x = arch * spacing - scroll + sx * 0.15 - spacing * 0.5
+        local spring = horizon - 70
+        local apex = horizon - 175
+        local w = spacing
+        canvas:line(x, horizon, x, spring, 10, 0.7, theme.wall_side, 120)
+        canvas:line(x, spring, x + w * 0.22, spring - 55, 6, 0.7, theme.wall_side, 110)
+        canvas:line(x + w * 0.22, spring - 55, x + w * 0.5, apex, 5, 0.7, theme.wall_side, 110)
+        canvas:line(x + w * 0.5, apex, x + w * 0.78, spring - 55, 5, 0.7, theme.wall_side, 110)
+        canvas:line(x + w * 0.78, spring - 55, x + w, spring, 6, 0.7, theme.wall_side, 110)
 
-        draw_line(self._arch_widgets[index + 1], x, horizon, x, spring, 9, theme.wall_side, 155, 4)
-        draw_line(self._arch_widgets[index + 2], x + spacing, horizon, x + spacing, spring, 9, theme.wall_side, 155, 4)
-        draw_line(self._arch_widgets[index + 3], x, spring, x + spacing * 0.23, spring - 48, 5, theme.wall_detail, 48, 4)
-        draw_line(self._arch_widgets[index + 4], x + spacing * 0.23, spring - 48, x + spacing * 0.5, apex, 4, theme.wall_detail, 48, 4)
-        draw_line(self._arch_widgets[index + 5], x + spacing * 0.5, apex, x + spacing * 0.77, spring - 48, 4, theme.wall_detail, 32, 4)
-        draw_line(self._arch_widgets[index + 6], x + spacing * 0.77, spring - 48, x + spacing, spring, 5, theme.wall_detail, 32, 4)
-        for part = 1, 6 do
-            UIWidget.draw(self._arch_widgets[index + part], ui_renderer)
+        -- Rose window glowing through the fog.
+        local rx, ry = x + w * 0.5, spring - 42
+        canvas:glow(rx, ry, 30, 0.72, theme.portal, 28, 3)
+        canvas:ring(rx, ry, 15, 2, 0.74, theme.wall_detail, 80, 16)
+        for k = 0, 5 do
+            local a = k / 6 * math_pi * 2 + self._time * 0.1
+            canvas:line(rx, ry, rx + math_cos(a) * 14, ry + math_sin(a) * 14, 1, 0.75, theme.wall_detail, 60)
         end
     end
 end
 
-function RaycasterView:_draw_walls(ui_renderer, theme, horizon, sx)
-    local columns = self._game:cast_columns(COLUMN_COUNT, FOV)
-    local portal_open = self._game:portal_open()
-    local time = self._game:time()
+-- Perspective-correct checkerboard floor (or vaulted ceiling) cast in horizontal bands.
+function RaycasterView:_draw_plane(canvas, theme, horizon, is_floor)
+    local player = self._game:player()
+    local dir_x, dir_y = math_cos(player.angle), math_sin(player.angle)
+    local plane_x, plane_y = -dir_y * TAN_HALF_FOV, dir_x * TAN_HALF_FOV
+    local extent = is_floor and (VIEW_H - horizon) or horizon
+    local base = is_floor and theme.floor or theme.ceiling
+    local hot = is_floor and theme.floor_hot or theme.ceiling_hot
+    local fog = theme.fog
+    local flicker = self._flicker
+
+    if extent <= 2 then return end
+
+    for band = 1, FLOOR_BANDS do
+        local k0 = ((band - 1) / FLOOR_BANDS) ^ 2
+        local k1 = (band / FLOOR_BANDS) ^ 2
+        local d0 = extent * k0
+        local d1 = extent * k1
+        local mid = (d0 + d1) * 0.5
+
+        if mid > 0.5 then
+            local row_distance = PROJ_PLANE * 0.5 / mid
+
+            if row_distance < MAX_PLANE_DISTANCE then
+                local lx = player.x + row_distance * (dir_x - plane_x)
+                local ly = player.y + row_distance * (dir_y - plane_y)
+                local rx = player.x + row_distance * (dir_x + plane_x)
+                local ry = player.y + row_distance * (dir_y + plane_y)
+                local ddx, ddy = rx - lx, ry - ly
+                local count = 0
+
+                plane_breaks[1] = 0
+                count = 1
+
+                if math_abs(ddx) > 1e-6 then
+                    local first = math_floor(math_min(lx, rx)) + 1
+                    local last = math_floor(math_max(lx, rx))
+                    for gx = first, math_min(last, first + 30) do
+                        count = count + 1
+                        plane_breaks[count] = (gx - lx) / ddx
+                    end
+                end
+                if math_abs(ddy) > 1e-6 then
+                    local first = math_floor(math_min(ly, ry)) + 1
+                    local last = math_floor(math_max(ly, ry))
+                    for gy = first, math_min(last, first + 30) do
+                        count = count + 1
+                        plane_breaks[count] = (gy - ly) / ddy
+                    end
+                end
+                count = count + 1
+                plane_breaks[count] = 1
+
+                for i = 2, count do
+                    local v = plane_breaks[i]
+                    local j = i - 1
+                    while j >= 1 and plane_breaks[j] > v do
+                        plane_breaks[j + 1] = plane_breaks[j]
+                        j = j - 1
+                    end
+                    plane_breaks[j + 1] = v
+                end
+
+                local fog_t = math_min(1, row_distance / MAX_PLANE_DISTANCE)
+                fog_t = fog_t * fog_t
+                local lantern = (1 / (1 + row_distance * 0.3)) * flicker
+                local y_top = is_floor and horizon + d0 or horizon - d1
+                local height = d1 - d0 + 0.6
+
+                for i = 1, count - 1 do
+                    local t0, t1 = plane_breaks[i], plane_breaks[i + 1]
+                    if t1 - t0 > 1e-4 then
+                        local tm = (t0 + t1) * 0.5
+                        local wx = lx + ddx * tm
+                        local wy = ly + ddy * tm
+                        local tx, ty = math_floor(wx), math_floor(wy)
+                        local parity = (tx + ty) % 2
+                        local variation = hash(tx, ty, is_floor and 1 or 2)
+                        local shade = (parity == 0 and 0.75 or 1) * (0.85 + variation * 0.3)
+                        local light = is_floor and (0.35 + lantern * 1.1) or (0.25 + lantern * 0.55)
+                        local r = mix_channel(mix_channel(base[2], hot[2], 0.5) * shade * light, fog[2], fog_t)
+                        local g = mix_channel(mix_channel(base[3], hot[3], 0.5) * shade * light, fog[3], fog_t)
+                        local b = mix_channel(mix_channel(base[4], hot[4], 0.5) * shade * light, fog[4], fog_t)
+                        canvas:rect_raw(t0 * VIEW_W, y_top, (t1 - t0) * VIEW_W + 0.5, height, 1, 255, r, g, b)
+                    end
+                end
+
+                -- Mortar seams: thin dark lines at every tile crossing.
+                if is_floor and row_distance < 7 then
+                    local seam_alpha = 120 * (1 - row_distance / 7)
+                    for i = 2, count - 1 do
+                        canvas:rect_raw(plane_breaks[i] * VIEW_W - 0.5, y_top, 1, height, 1.05, seam_alpha, 0, 0, 0)
+                    end
+                end
+            end
+        end
+    end
+
+    -- Lantern pool of light on the floor and wet reflection sheen.
+    if is_floor then
+        canvas:ellipse(VIEW_W * 0.5, VIEW_H + 20, 260, 120, 1.1, theme.floor_hot, 45 * self._flicker, 1, 0.1, 24)
+        canvas:vgradient(0, horizon, VIEW_W, 26, 1.12, fog, fog, 160, 0, 8)
+    else
+        canvas:vgradient(0, horizon - 26, VIEW_W, 26, 1.12, fog, fog, 0, 160, 8)
+    end
+end
+
+function RaycasterView:_draw_walls(canvas, theme, horizon, sx, map)
+    local game = self._game
+    local columns = game:cast_columns(COLUMN_COUNT, FOV)
+    local portal_open = game:portal_open()
+    local time = game:time()
+    local fog = theme.fog
+    local flicker = self._flicker
+    local torches = self._torches
+
+    for i = #torches, 1, -1 do torches[i] = nil end
+    for key in pairs(torch_lookup) do torch_lookup[key] = nil end
 
     for i = 1, COLUMN_COUNT do
         local column = columns[i]
         local distance = math_max(0.07, column.corrected_distance or column.distance)
-        local height = math_min(VIEW_H * 2.4, PROJ_PLANE / distance)
+        local height = math_min(VIEW_H * 3, PROJ_PLANE / distance)
         local x = (i - 1) * COLUMN_W + sx
-        local y = horizon - height * 0.5
-        local color
-        local alpha
-
-        if column.tile == "X" then
-            color = portal_open and theme.portal or theme.locked
-            local bands = math_floor(column.wall_x * 12 + time * (portal_open and 5 or 1.5)) % 3
-            alpha = 155 + bands * 45 + math_sin(time * 5 + i * 0.1) * 20
-        else
-            local stripe = math_floor(column.wall_x * 10 + column.map_x * 2 + column.map_y) % 5
-            color = column.side == "y" and theme.wall_side or stripe == 0 and theme.wall_detail or theme.wall
-            alpha = 255
-
-            if column.wall_x < 0.035 or column.wall_x > 0.965 then
-                color = theme.wall_detail
-                alpha = alpha + 35
-            end
-        end
-
-        local widget = self._wall_widgets[i]
-
-        if draw_world_rect(widget, x, y, COLUMN_W + 1, height, color, color_alpha(color, alpha), 8) then
-            if column.tile ~= "X" then
-                local light = 1 / (1 + distance * 0.19)
-                local stone = 0.88 + (column.map_x * 7 + column.map_y * 13) % 5 * 0.025
-                for channel = 2, 4 do
-                    widget.style.gfx.color[channel] = theme.fog[channel] * (1 - light) + color[channel] * light * stone
-                end
-            end
-            UIWidget.draw(widget, ui_renderer)
-        end
-
-        -- Three clipped strips per ray keep masonry aligned with the wall hit, not the screen.
-        local detail_index = (i - 1) * 3
-        local u = math_abs(column.wall_x - 0.5) * 2
-        local relief = math_max(0, 1 - distance / 15)
-        local recess_top = 0.14 + u * u * 0.22
-        local recess = self._wall_details[detail_index + 1]
-        local sill = self._wall_details[detail_index + 2]
-        local cornice = self._wall_details[detail_index + 3]
-        if column.tile ~= "X" then
-            if u < 0.72 and height > 12 then
-                if draw_world_rect(recess, x, y + height * recess_top, COLUMN_W + 1, height * (0.77 - recess_top), COLORS.black, 125 * relief, 8.1) then
-                    UIWidget.draw(recess, ui_renderer)
-                end
-            end
-            if draw_world_rect(sill, x, y + height * 0.80, COLUMN_W + 1, math_max(1, height * 0.024), theme.wall_detail, 105 * relief, 8.2) then
-                UIWidget.draw(sill, ui_renderer)
-            end
-            if draw_world_rect(cornice, x, y + height * 0.065, COLUMN_W + 1, math_max(1, height * 0.026), theme.wall_detail, 135 * relief, 8.2) then
-                UIWidget.draw(cornice, ui_renderer)
-            end
-        else
-            if draw_world_rect(recess, x, y + height * (0.1 + u * 0.18), COLUMN_W + 1, height * 0.60, color, 38, 8.1) then
-                UIWidget.draw(recess, ui_renderer)
-            end
-            if draw_world_rect(sill, x, y + height * 0.85, COLUMN_W + 1, height * 0.035, COLORS.gold_hot, 180, 8.2) then
-                UIWidget.draw(sill, ui_renderer)
-            end
-        end
+        local top = horizon - height * 0.5
+        local u = column.wall_x or 0
+        local fog_t = math_min(1, distance / 14)
+        fog_t = fog_t * fog_t
+        local light = (1 / (1 + distance * 0.2)) * (column.side == "y" and 0.72 or 1) * flicker
 
         self._zbuffer[i] = distance
+
+        if column.tile == "X" then
+            local color = portal_open and theme.portal or theme.locked
+            canvas:rect(x, top, COLUMN_W + 0.6, height, 8, color, 255, 0.35)
+            for band = 0, 5 do
+                local v = (band / 6 + time * (portal_open and 0.35 or 0.08) + u * 0.3) % 1
+                local wave = (math_sin(u * 18 + time * 4 + band) + 1) * 0.5
+                canvas:rect(x, top + v * height, COLUMN_W + 0.6, height * 0.08, 8.1, color, 120 + wave * 120, 1, wave * 0.4)
+            end
+            local core = math_max(0, 1 - math_abs(u - 0.5) * 3)
+            canvas:rect(x, top + height * 0.08, COLUMN_W + 0.6, height * 0.84, 8.2, COLORS.white, core * (60 + math_sin(time * 9) * 30))
+            canvas:rect(x, top + height * 0.9, COLUMN_W + 0.6, height * 0.05, 8.25, COLORS.gold_hot, 180)
+        else
+            local mx, my = column.map_x or 0, column.map_y or 0
+            local tile_hash = hash(mx, my, 3)
+            local base = column.side == "y" and theme.wall_side or theme.wall
+            local mortar_r = mix_channel(base[2] * 0.25 * light, fog[2], fog_t)
+            local mortar_g = mix_channel(base[3] * 0.25 * light, fog[3], fog_t)
+            local mortar_b = mix_channel(base[4] * 0.25 * light, fog[4], fog_t)
+
+            canvas:rect_raw(x, top, COLUMN_W + 0.6, height, 8, 255, mortar_r, mortar_g, mortar_b)
+
+            local is_window = tile_hash < 0.22 and height > 30
+            local is_torch = not is_window and tile_hash > 0.8
+
+            if height > 18 then
+                local course_h = height / BRICK_COURSES
+                local mortar = math_max(0.6, course_h * 0.07)
+                for course = 0, BRICK_COURSES - 1 do
+                    local brick_u = u * 2 + (course % 2) * 0.5
+                    local brick_index = math_floor(brick_u)
+                    local within = brick_u - brick_index
+                    if within > 0.035 and within < 0.965 then
+                        local variation = 0.78 + hash(mx * 3 + brick_index, my * 5 + course, 7) * 0.34
+                        local edge = within < 0.12 and 1.18 or within > 0.9 and 0.82 or 1
+                        local course_light = light * variation * edge
+                        if course == 0 then course_light = course_light * 0.75 end
+                        if course == BRICK_COURSES - 1 then course_light = course_light * 0.6 end
+                        canvas:rect_raw(x, top + course * course_h + mortar, COLUMN_W + 0.6, course_h - mortar * 2, 8.05, 255,
+                            mix_channel(base[2] * course_light, fog[2], fog_t),
+                            mix_channel(base[3] * course_light, fog[3], fog_t),
+                            mix_channel(base[4] * course_light, fog[4], fog_t))
+                    end
+                end
+
+                -- Carved cornice and plinth.
+                local detail = theme.wall_detail
+                local dl = light * (1 - fog_t)
+                canvas:rect_raw(x, top + height * 0.04, COLUMN_W + 0.6, math_max(1, height * 0.03), 8.1, 255 * (1 - fog_t * 0.8), detail[2] * dl, detail[3] * dl, detail[4] * dl)
+                canvas:rect_raw(x, top + height * 0.86, COLUMN_W + 0.6, math_max(1, height * 0.025), 8.1, 200 * (1 - fog_t * 0.8), detail[2] * dl, detail[3] * dl, detail[4] * dl)
+            end
+
+            if is_window then
+                local d = math_abs(u - 0.5)
+                if d < 0.2 then
+                    local v_top = 0.16 + 0.2 * (d / 0.2) ^ 1.6
+                    local v_bottom = 0.64
+                    canvas:rect_raw(x, top + height * (v_top - 0.02), COLUMN_W + 0.6, height * (v_bottom - v_top + 0.04), 8.15, 255, 10, 8, 12)
+                    if d > 0.012 and math_abs(d - 0.1) > 0.01 then
+                        local panes = 6
+                        for p = 0, panes - 1 do
+                            local v0 = v_top + (v_bottom - v_top) * p / panes
+                            local v1 = v_top + (v_bottom - v_top) * (p + 1) / panes
+                            local hue = hash(math_floor(u * 10), p, mx + my) * 0.9 + time * 0.01
+                            Gfx.Canvas.hsv(glass_color, hue, 0.75, 0.9, 255)
+                            local shimmer = 0.75 + 0.25 * math_sin(time * 1.5 + p + u * 8)
+                            local glow = (1 - fog_t * 0.6) * shimmer
+                            canvas:rect_raw(x, top + height * v0 + 0.8, COLUMN_W + 0.6, height * (v1 - v0) - 1.6, 8.2, 255,
+                                glass_color[2] * glow, glass_color[3] * glow, glass_color[4] * glow)
+                        end
+                    end
+                end
+                -- Light spilling from the window onto the wall base.
+                local spill = math_max(0, 1 - d * 3)
+                canvas:rect(x, top + height * 0.66, COLUMN_W + 0.6, height * 0.3, 8.22, theme.portal, 40 * spill * (1 - fog_t))
+            end
+
+            if is_torch then
+                local d = math_abs(u - 0.5)
+                local warm = math_max(0, 1 - d / 0.5)
+                canvas:rect(x, top, COLUMN_W + 0.6, height, 8.22, RC.torch, 70 * warm * warm * flicker * (1 - fog_t))
+                if d < 0.035 then
+                    canvas:rect(x, top + height * 0.36, COLUMN_W + 0.6, height * 0.12, 8.25, RC.steel, 255, light)
+                    local key = mx * 1000 + my + (column.side == "y" and 0.5 or 0)
+                    local existing = torch_lookup[key]
+                    if not existing or d < existing.d then
+                        if not existing then
+                            existing = {}
+                            torch_lookup[key] = existing
+                            torches[#torches + 1] = existing
+                        end
+                        existing.d, existing.x, existing.y, existing.size, existing.distance, existing.fog = d, x + COLUMN_W * 0.5, top + height * 0.33, height * 0.07, distance, fog_t
+                    end
+                end
+            end
+
+            -- Ambient occlusion where wall meets floor and vault.
+            canvas:rect(x, top + height * 0.9, COLUMN_W + 0.6, height * 0.1, 8.3, COLORS.black, 110 * (1 - fog_t))
+            canvas:rect(x, top, COLUMN_W + 0.6, height * 0.04, 8.3, COLORS.black, 90 * (1 - fog_t))
+        end
     end
 end
 
-function RaycasterView:_draw_entities(ui_renderer, entities, theme, horizon, sx)
-    local player = self._game:player()
-    local cosine = math_cos(player.angle)
-    local sine = math_sin(player.angle)
-    local render_queue = {}
+function RaycasterView:_draw_torches(canvas, theme)
+    local t = self._time
+    local torches = self._torches
 
-    local function queue_entity(entity, kind)
-        local dx = entity.x - player.x
-        local dy = entity.y - player.y
-        local forward = dx * cosine + dy * sine
+    for i = 1, #torches do
+        local torch = torches[i]
+        local s = math_min(40, math_max(2, torch.size))
+        local fade = 1 - torch.fog * 0.7
+        local f = 1 + math_sin(t * 17 + i) * 0.12 + math_sin(t * 31 + i * 2) * 0.08
+        canvas:glow(torch.x, torch.y, s * 5 * f, 9, RC.torch, 90 * fade, 5)
+        canvas:tri(torch.x - s * 0.6, torch.y, torch.x + s * 0.6, torch.y, torch.x + math_sin(t * 9 + i) * s * 0.2, torch.y - s * 2.2 * f, 9.1, RC.torch, 230 * fade)
+        canvas:tri(torch.x - s * 0.3, torch.y, torch.x + s * 0.3, torch.y, torch.x, torch.y - s * 1.3 * f, 9.12, RC.torch_hot, 255 * fade)
 
-        if forward <= 0.12 then return end
+        if math_random() < 0.05 then
+            self._particles:emit(torch.x, torch.y - s * 2, (math_random() - 0.5) * 12, -20 - math_random() * 25, 0.8, 1.6, RC.ember, "ember", 0.5, -5)
+        end
+    end
+end
 
-        local side = -dx * sine + dy * cosine
-        local screen_x = VIEW_W * 0.5 + side / forward * PROJ_PLANE
+function RaycasterView:_sprite_span(screen_x, half_width, forward)
+    local left = screen_x
+    local right = screen_x
+    local center = math_floor(math_min(COLUMN_COUNT, math_max(1, screen_x / COLUMN_W + 1)))
 
-        if screen_x < -180 or screen_x > VIEW_W + 180 then return end
+    if forward >= (self._zbuffer[center] or 999) + 0.12 then return nil end
 
-        render_queue[#render_queue + 1] = {
-            entity = entity,
-            kind = kind,
-            forward = forward,
-            screen_x = screen_x,
-        }
+    local c = center
+    while c > 1 and (self._zbuffer[c - 1] or 999) + 0.12 > forward and (c - 1) * COLUMN_W > screen_x - half_width do
+        c = c - 1
+    end
+    left = (c - 1) * COLUMN_W
+    c = center
+    while c < COLUMN_COUNT and (self._zbuffer[c + 1] or 999) + 0.12 > forward and c * COLUMN_W < screen_x + half_width do
+        c = c + 1
+    end
+    right = c * COLUMN_W
+
+    return left, right
+end
+
+function RaycasterView:_draw_entities(canvas, entities, theme, horizon, sx)
+    local count = 0
+
+    local function queue(entity, kind)
+        local screen_x, floor_y, forward = self:_project(entity.x, entity.y, horizon, sx)
+        if not screen_x or screen_x < -200 or screen_x > VIEW_W + 200 then return end
+        count = count + 1
+        local entry = sprite_queue[count]
+        if not entry then
+            entry = {}
+            sprite_queue[count] = entry
+        end
+        entry.entity, entry.kind, entry.screen_x, entry.floor_y, entry.forward = entity, kind, screen_x, floor_y, forward
     end
 
     for i = 1, #entities.pickups do
         local pickup = entities.pickups[i]
-        if not pickup.taken then queue_entity(pickup, pickup.kind) end
+        if not pickup.taken then queue(pickup, pickup.kind) end
     end
-
     for i = 1, #entities.enemies do
         local enemy = entities.enemies[i]
-        if enemy.alive then queue_entity(enemy, "enemy") end
+        if enemy.alive then queue(enemy, "enemy") end
     end
 
-    table.sort(render_queue, function(a, b) return a.forward > b.forward end)
+    for i = 2, count do
+        local entry = sprite_queue[i]
+        local j = i - 1
+        while j >= 1 and sprite_queue[j].forward < entry.forward do
+            sprite_queue[j + 1] = sprite_queue[j]
+            j = j - 1
+        end
+        sprite_queue[j + 1] = entry
+    end
 
-    self._sprite_rect_index = 1
-    self._sprite_circle_index = 1
-    self._sprite_renderer = ui_renderer
-    local entity_layer_step = 6 / math_max(1, #render_queue)
-    -- Components use 14..20; reserve seven sublayers per entity below effects at 21.
-    self._sprite_layer_step = entity_layer_step / 7
+    local t = self._game:time()
 
-    for i = 1, #render_queue do
-        local entry = render_queue[i]
-        local column = math_floor(math_min(COLUMN_COUNT, math_max(1, entry.screen_x / COLUMN_W + 1)))
+    for i = 1, count do
+        local entry = sprite_queue[i]
+        local half = PROJ_PLANE * 0.6 / entry.forward
+        local left, right = self:_sprite_span(entry.screen_x, half, entry.forward)
 
-        if entry.forward < (self._zbuffer[column] or 999) + 0.12 then
-            self._sprite_layer = 14 + (i - 1) * entity_layer_step
-            local floor_y = horizon + PROJ_PLANE * 0.5 / entry.forward
-            local pulse = (math_sin(self._game:time() * 4.5 + entry.entity.phase) + 1) * 0.5
+        if left then
+            local layer = 14 + (i - 1) / math_max(1, count) * 6
+            local pulse = (math_sin(t * 4.5 + (entry.entity.phase or 0)) + 1) * 0.5
+            local fog_t = math_min(1, entry.forward / 14)
+            local fade = 1 - fog_t * fog_t * 0.75
+
+            canvas:set_clip(math_max(0, left), 0, math_min(VIEW_W, right), VIEW_H)
 
             if entry.kind == "enemy" then
-                self:_draw_enemy(entry, floor_y, pulse, sx)
+                self:_draw_enemy(canvas, entry, layer, pulse, fade, t)
             elseif entry.kind == "sigil" then
-                self:_draw_sigil(entry, floor_y, pulse, sx)
+                self:_draw_sigil(canvas, entry, layer, pulse, fade, t)
             elseif entry.kind == "shard" then
-                self:_draw_shard(entry, floor_y, pulse, sx)
+                self:_draw_shard(canvas, entry, layer, pulse, fade, t)
             elseif entry.kind == "health" then
-                self:_draw_health(entry, floor_y, pulse, sx)
+                self:_draw_health(canvas, entry, layer, pulse, fade, t)
             else
-                self:_draw_fervor(entry, floor_y, pulse, sx)
+                self:_draw_fervor(canvas, entry, layer, pulse, fade, t)
             end
+
+            canvas:reset_clip()
         end
     end
 
-    for i = self._sprite_rect_index, SPRITE_RECTS do clear_rect(self._sprite_rects[i]) end
-    for i = self._sprite_circle_index, SPRITE_CIRCLES do clear_circle(self._sprite_circles[i]) end
+    for i = count + 1, #sprite_queue do sprite_queue[i].entity = nil end
 end
 
-function RaycasterView:_sprite_rect(x, y, width, height, color, alpha, z)
-    local index = self._sprite_rect_index
-    if index > SPRITE_RECTS then return end
-
-    local widget = self._sprite_rects[index]
-    self._sprite_rect_index = index + 1
-
-    local layer = self._sprite_layer + ((z or 15) - 14) * self._sprite_layer_step
-    if draw_world_rect(widget, x, y, width, height, color, alpha, layer) then
-        UIWidget.draw(widget, self._sprite_renderer)
-    end
+function RaycasterView:_floor_shadow(canvas, x, floor_y, width, layer, fade)
+    canvas:ellipse(x, floor_y, width * 0.55, width * 0.12, layer, RC.shadow, 130 * fade, 1, 0, 14)
 end
 
-function RaycasterView:_sprite_circle(x, y, size, color, alpha, z)
-    local index = self._sprite_circle_index
-    if index > SPRITE_CIRCLES then return end
-
-    local widget = self._sprite_circles[index]
-    self._sprite_circle_index = index + 1
-
-    local layer = self._sprite_layer + ((z or 16) - 14) * self._sprite_layer_step
-    if draw_circle(widget, x, y, size, color, alpha, layer) then
-        UIWidget.draw(widget, self._sprite_renderer)
-    end
-end
-
-function RaycasterView:_draw_enemy(entry, floor_y, pulse, sx)
+function RaycasterView:_draw_enemy(canvas, entry, layer, pulse, fade, t)
     local forward = entry.forward
-    local height = math_min(VIEW_H * 1.3, PROJ_PLANE * 0.94 / forward)
-    local width = height * 0.46
-    local center_x = entry.screen_x + sx
-    local top = floor_y - height
-    local fade = math_max(70, 255 - forward * 16)
-    local sway = math_sin(entry.entity.phase * 1.7) * width * 0.08
+    local height = math_min(VIEW_H * 1.4, PROJ_PLANE * 0.94 / forward)
+    local width = height * 0.5
+    local phase = entry.entity.phase or 0
+    local hover = math_sin(t * 2.4 + phase) * height * 0.035
+    local cx = entry.screen_x + math_sin(phase * 1.7 + t * 1.3) * width * 0.06
+    local floor_y = entry.floor_y
+    local top = floor_y - height + hover - height * 0.04
+    local a = 255 * fade
 
-    self:_sprite_circle(center_x + sway, top + height * 0.23, width * 0.55, COLORS.corruption, fade * 0.35, 14)
-    self:_sprite_circle(center_x + sway, top + height * 0.20, width * 0.34, COLORS.armor_edge, fade, 18)
-    self:_sprite_rect(center_x - width * 0.28 + sway, top + height * 0.27, width * 0.56, height * 0.42, COLORS.armor, fade, 17)
-    self:_sprite_rect(center_x - width * 0.48 + sway, top + height * 0.37, width * 0.24, height * 0.08, COLORS.corruption_hot, fade * 0.75, 18)
-    self:_sprite_rect(center_x + width * 0.24 + sway, top + height * 0.37, width * 0.24, height * 0.08, COLORS.corruption_hot, fade * 0.75, 18)
-    self:_sprite_rect(center_x - width * 0.25 + sway, top + height * 0.67, width * 0.16, height * 0.26, COLORS.corruption, fade * 0.62, 16)
-    self:_sprite_rect(center_x + width * 0.09 + sway, top + height * 0.67, width * 0.16, height * 0.26, COLORS.corruption, fade * 0.62, 16)
-    self:_sprite_rect(center_x - width * 0.12 + sway, top + height * 0.17, width * 0.07, height * 0.035, COLORS.white, 230, 19)
-    self:_sprite_rect(center_x + width * 0.05 + sway, top + height * 0.17, width * 0.07, height * 0.035, COLORS.white, 230, 19)
+    self:_floor_shadow(canvas, cx, floor_y, width * 1.1, layer, fade)
+    canvas:glow(cx, top + height * 0.45, width * 1.1, layer + 0.01, COLORS.corruption, 70 * fade * (0.7 + pulse * 0.3), 4)
 
-    if height > 28 then
-        self:_sprite_rect(center_x - width * 0.28 + sway, top + height * 0.29, width * 0.055, height * 0.36, COLORS.armor_edge, fade, 18)
-        self:_sprite_rect(center_x - width * 0.18 + sway, top + height * 0.31, width * 0.36, height * 0.065, COLORS.armor_edge, fade, 18)
-        self:_sprite_rect(center_x - width * 0.045 + sway, top + height * 0.40, width * 0.09, height * 0.23, COLORS.corruption_hot, fade * 0.7, 18)
-        self:_sprite_rect(center_x - width * 0.09 + sway, top + height * 0.22, width * 0.18, height * 0.045, COLORS.black, fade, 19)
+    -- Robe: tapered body with ragged hem.
+    local sh_y = top + height * 0.26
+    local hem_y = floor_y - height * 0.06 + hover
+    local sh_w = width * 0.3
+    local hem_w = width * 0.48
+    canvas:quad(cx - sh_w, sh_y, cx, sh_y - height * 0.02, cx, hem_y, cx - hem_w, hem_y, layer + 0.02, RC.robe_light, a, 0.9)
+    canvas:quad(cx, sh_y - height * 0.02, cx + sh_w, sh_y, cx + hem_w, hem_y, cx, hem_y, layer + 0.02, RC.robe, a)
+    local teeth = 6
+    for k = 0, teeth - 1 do
+        local x0 = cx - hem_w + (k / teeth) * hem_w * 2
+        local x1 = cx - hem_w + ((k + 1) / teeth) * hem_w * 2
+        local drop = height * (0.04 + hash(k, phase, 1) * 0.05) * (1 + math_sin(t * 5 + k + phase) * 0.25)
+        canvas:tri(x0, hem_y - 1, x1, hem_y - 1, (x0 + x1) * 0.5, hem_y + drop, layer + 0.021, k < teeth / 2 and RC.robe_light or RC.robe, a, k < teeth / 2 and 0.9 or 1)
     end
 
-    if pulse > 0.72 then
-        self:_sprite_circle(center_x + sway, top + height * 0.48, width * 0.18, COLORS.corruption_hot, 130, 19)
+    -- Corrupted sigils burning on the robe.
+    local rune = 150 + pulse * 105
+    canvas:line(cx - width * 0.08, top + height * 0.42, cx + width * 0.08, top + height * 0.55, math_max(1, width * 0.025), layer + 0.03, COLORS.corruption_hot, rune * fade)
+    canvas:line(cx + width * 0.08, top + height * 0.42, cx - width * 0.08, top + height * 0.55, math_max(1, width * 0.025), layer + 0.03, COLORS.corruption_hot, rune * fade)
+    canvas:circle(cx, top + height * 0.485, width * 0.05, layer + 0.031, COLORS.corruption_hot, rune * fade, 1, 0.3, 8)
+
+    -- Arms reaching forward with bone claws.
+    for side = -1, 1, 2 do
+        local sway = math_sin(t * 3 + phase + side) * width * 0.08
+        local ax, ay = cx + side * sh_w * 0.9, sh_y + height * 0.03
+        local ex, ey = cx + side * width * 0.52 + sway, top + height * 0.5
+        local hx, hy = cx + side * width * 0.45 + sway * 1.4, top + height * 0.62
+        canvas:line(ax, ay, ex, ey, math_max(1.5, width * 0.12), layer + 0.025, side < 0 and RC.robe_light or RC.robe, a)
+        canvas:line(ex, ey, hx, hy, math_max(1.2, width * 0.08), layer + 0.026, RC.robe, a)
+        for c = -1, 1 do
+            canvas:line(hx, hy, hx + side * width * 0.05 + c * width * 0.04, hy + height * 0.07, math_max(0.8, width * 0.02), layer + 0.027, RC.bone, a)
+        end
+    end
+
+    -- Hood and burning eyes.
+    local hood_y = top + height * 0.08
+    canvas:tri(cx - width * 0.24, sh_y + height * 0.02, cx + width * 0.24, sh_y + height * 0.02, cx, top - height * 0.04, layer + 0.04, RC.robe_light, a, 0.75)
+    canvas:tri(cx, sh_y + height * 0.02, cx + width * 0.24, sh_y + height * 0.02, cx, top - height * 0.04, layer + 0.041, RC.robe, a)
+    canvas:ellipse(cx, hood_y + height * 0.08, width * 0.13, height * 0.075, layer + 0.045, COLORS.black, a, 1, 0, 12)
+    for side = -1, 1, 2 do
+        local ex, ey = cx + side * width * 0.055, hood_y + height * 0.075
+        canvas:glow(ex, ey, width * 0.09, layer + 0.046, RC.eye, 150 * fade, 3)
+        canvas:circle(ex, ey, math_max(0.8, width * 0.022), layer + 0.047, RC.eye, 255, 1, 0.5, 6)
     end
 end
 
-function RaycasterView:_draw_sigil(entry, floor_y, pulse, sx)
+function RaycasterView:_draw_sigil(canvas, entry, layer, pulse, fade, t)
     local forward = entry.forward
     local size = math_min(190, PROJ_PLANE * 0.43 / forward)
-    local center_x = entry.screen_x + sx
-    local center_y = floor_y - PROJ_PLANE * (0.48 + pulse * 0.06) / forward
-    local fade = math_max(80, 255 - forward * 13)
+    local cx = entry.screen_x
+    local cy = entry.floor_y - PROJ_PLANE * (0.48 + pulse * 0.06) / forward
+    local a = 255 * fade
+    local spin = t * 1.2 + (entry.entity.phase or 0)
 
-    self:_sprite_circle(center_x, center_y, size * 1.18, COLORS.gold, 35 + pulse * 45, 14)
-    self:_sprite_circle(center_x, center_y, size * 0.82, COLORS.gold, fade, 17)
-    self:_sprite_circle(center_x, center_y, size * 0.52, COLORS.black, 235, 18)
-    self:_sprite_rect(center_x - size * 0.07, center_y - size * 0.38, size * 0.14, size * 0.76, COLORS.gold_hot, fade, 19)
-    self:_sprite_rect(center_x - size * 0.30, center_y - size * 0.07, size * 0.60, size * 0.14, COLORS.gold_hot, fade, 19)
-    self:_sprite_circle(center_x, center_y, size * 0.16, COLORS.white, 240, 20)
+    canvas:vgradient(cx - size * 0.18, cy, size * 0.36, entry.floor_y - cy, layer, COLORS.gold, COLORS.gold, 0, 70 * fade, 8)
+    canvas:ellipse(cx, entry.floor_y, size * 0.6, size * 0.12, layer, COLORS.gold, 60 * fade, 1, 0, 16)
+    canvas:glow(cx, cy, size * 1.2, layer + 0.01, COLORS.gold, (60 + pulse * 50) * fade, 5)
+
+    local r = size * 0.42
+    canvas:ring(cx, cy, r, math_max(1.5, size * 0.07), layer + 0.02, COLORS.gold, a, 24, nil, nil, 0.9)
+    canvas:ring(cx, cy, r * 0.62, math_max(1, size * 0.03), layer + 0.02, COLORS.gold_hot, a, 20)
+    for k = 0, 7 do
+        local ang = spin + k * math_pi / 4
+        local len = k % 2 == 0 and r * 1.3 or r * 1.05
+        local ca, sa = math_cos(ang), math_sin(ang)
+        local px, py = -sa * size * 0.06, ca * size * 0.06
+        canvas:tri(cx + px, cy + py, cx - px, cy - py, cx + ca * len, cy + sa * len, layer + 0.025, k % 2 == 0 and COLORS.gold_hot or COLORS.gold, a)
+    end
+    canvas:circle(cx, cy, size * 0.14, layer + 0.03, COLORS.gold, a, 0.8, 0, 12)
+    canvas:circle(cx - size * 0.03, cy - size * 0.03, size * 0.07, layer + 0.031, COLORS.white, 240 * fade, 1, 0, 10)
 end
 
-function RaycasterView:_draw_shard(entry, floor_y, pulse, sx)
+function RaycasterView:_draw_shard(canvas, entry, layer, pulse, fade, t)
     local forward = entry.forward
-    local size = math_min(90, PROJ_PLANE * 0.20 / forward)
-    local center_x = entry.screen_x + sx
-    local center_y = floor_y - PROJ_PLANE * (0.34 + pulse * 0.05) / forward
-    local fade = math_max(70, 245 - forward * 15)
+    local size = math_min(90, PROJ_PLANE * 0.2 / forward)
+    local cx = entry.screen_x
+    local cy = entry.floor_y - PROJ_PLANE * (0.34 + pulse * 0.05) / forward
+    local a = 255 * fade
+    local turn = math_cos(t * 2.2 + (entry.entity.phase or 0))
+    local w = size * 0.34 * (0.35 + math_abs(turn) * 0.65)
+    local h = size * 0.55
 
-    self:_sprite_circle(center_x, center_y, size * 1.25, COLORS.fervor, 22 + pulse * 38, 14)
-    self:_sprite_rect(center_x - size * 0.12, center_y - size * 0.48, size * 0.24, size * 0.96, COLORS.fervor, fade, 17)
-    self:_sprite_rect(center_x - size * 0.34, center_y - size * 0.22, size * 0.68, size * 0.44, COLORS.fervor, fade * 0.82, 17)
-    self:_sprite_rect(center_x - size * 0.06, center_y - size * 0.29, size * 0.12, size * 0.58, COLORS.white, 220, 18)
+    self:_floor_shadow(canvas, cx, entry.floor_y, size * 0.8, layer, fade)
+    canvas:glow(cx, cy, size * 1.1, layer + 0.01, COLORS.fervor, (50 + pulse * 60) * fade, 4)
+    canvas:tri(cx, cy - h, cx - w, cy, cx, cy, layer + 0.02, COLORS.fervor, a, 1, 0.35)
+    canvas:tri(cx, cy - h, cx + w, cy, cx, cy, layer + 0.02, COLORS.fervor, a, 0.75)
+    canvas:tri(cx, cy + h, cx - w, cy, cx, cy, layer + 0.02, COLORS.fervor, a, 0.6)
+    canvas:tri(cx, cy + h, cx + w, cy, cx, cy, layer + 0.02, COLORS.fervor, a, 0.4)
+    canvas:line(cx, cy - h, cx, cy + h, math_max(0.8, size * 0.02), layer + 0.03, COLORS.white, 160 * fade)
 end
 
-function RaycasterView:_draw_health(entry, floor_y, pulse, sx)
+function RaycasterView:_draw_health(canvas, entry, layer, pulse, fade, t)
     local forward = entry.forward
     local size = math_min(100, PROJ_PLANE * 0.25 / forward)
-    local center_x = entry.screen_x + sx
-    local center_y = floor_y - PROJ_PLANE * 0.27 / forward
-    local fade = math_max(80, 255 - forward * 13)
+    local cx = entry.screen_x
+    local cy = entry.floor_y - PROJ_PLANE * 0.3 / forward + math_sin(t * 2 + (entry.entity.phase or 0)) * size * 0.08
+    local a = 255 * fade
 
-    self:_sprite_circle(center_x, center_y, size * 1.05, COLORS.grace, 30 + pulse * 30, 14)
-    self:_sprite_rect(center_x - size * 0.38, center_y - size * 0.38, size * 0.76, size * 0.76, COLORS.grace, fade * 0.5, 16)
-    self:_sprite_rect(center_x - size * 0.09, center_y - size * 0.32, size * 0.18, size * 0.64, COLORS.white, fade, 18)
-    self:_sprite_rect(center_x - size * 0.32, center_y - size * 0.09, size * 0.64, size * 0.18, COLORS.white, fade, 18)
+    self:_floor_shadow(canvas, cx, entry.floor_y, size, layer, fade)
+    canvas:glow(cx, cy, size * 1.2, layer + 0.01, COLORS.grace, (40 + pulse * 50) * fade, 4)
+    canvas:circle(cx, cy, size * 0.42, layer + 0.02, COLORS.grace, 170 * fade, 0.6, 0, 18)
+    canvas:circle(cx - size * 0.1, cy - size * 0.1, size * 0.28, layer + 0.021, COLORS.grace, 120 * fade, 1, 0.3, 14)
+    canvas:rect(cx - size * 0.08, cy - size * 0.3, size * 0.16, size * 0.6, layer + 0.03, COLORS.white, a)
+    canvas:rect(cx - size * 0.3, cy - size * 0.08, size * 0.6, size * 0.16, layer + 0.03, COLORS.white, a)
+    canvas:ring(cx, cy, size * 0.5, math_max(1, size * 0.03), layer + 0.035, COLORS.grace, 200 * fade, 20, t * 2, t * 2 + math_pi * 1.3)
 end
 
-function RaycasterView:_draw_fervor(entry, floor_y, pulse, sx)
+function RaycasterView:_draw_fervor(canvas, entry, layer, pulse, fade, t)
     local forward = entry.forward
     local size = math_min(100, PROJ_PLANE * 0.24 / forward)
-    local center_x = entry.screen_x + sx
-    local center_y = floor_y - PROJ_PLANE * 0.27 / forward
-    local fade = math_max(80, 255 - forward * 13)
+    local cx = entry.screen_x
+    local cy = entry.floor_y - PROJ_PLANE * 0.28 / forward
+    local a = 255 * fade
+    local level = 0.55 + math_sin(t * 3 + (entry.entity.phase or 0)) * 0.08
 
-    self:_sprite_circle(center_x, center_y, size, COLORS.fervor, 25 + pulse * 45, 14)
-    self:_sprite_rect(center_x - size * 0.23, center_y - size * 0.38, size * 0.46, size * 0.72, COLORS.fervor, fade * 0.75, 17)
-    self:_sprite_rect(center_x - size * 0.15, center_y - size * 0.52, size * 0.30, size * 0.16, COLORS.gold_hot, fade, 18)
-    self:_sprite_rect(center_x - size * 0.06, center_y - size * 0.25, size * 0.12, size * 0.43, COLORS.white, 210, 18)
+    self:_floor_shadow(canvas, cx, entry.floor_y, size * 0.7, layer, fade)
+    canvas:glow(cx, cy, size, layer + 0.01, COLORS.fervor, (40 + pulse * 55) * fade, 4)
+    canvas:rect(cx - size * 0.2, cy - size * 0.35, size * 0.4, size * 0.72, layer + 0.02, COLORS.black, 170 * fade)
+    canvas:rect(cx - size * 0.18, cy - size * 0.35 + size * 0.72 * (1 - level), size * 0.36, size * 0.72 * level, layer + 0.025, COLORS.fervor, a, 1, 0.1)
+    canvas:rect(cx - size * 0.14, cy - size * 0.3, size * 0.06, size * 0.6, layer + 0.03, COLORS.white, 110 * fade)
+    canvas:rect(cx - size * 0.24, cy - size * 0.47, size * 0.48, size * 0.13, layer + 0.03, COLORS.gold, a, 0.8)
+    canvas:rect(cx - size * 0.24, cy + size * 0.37, size * 0.48, size * 0.08, layer + 0.03, COLORS.gold, a, 0.7)
 end
 
-function RaycasterView:_draw_effects(ui_renderer, effects, horizon, sx)
-    local player = self._game:player()
-    local cosine = math_cos(player.angle)
-    local sine = math_sin(player.angle)
+function RaycasterView:_draw_effects(canvas, effects, horizon, sx)
+    if not effects then return end
 
-    for i = 1, EFFECT_WIDGETS do
-        local widget = self._effect_widgets[i]
+    for i = 1, #effects do
         local effect = effects[i]
+        local screen_x, floor_y, forward = self:_project(effect.x, effect.y, horizon, sx)
 
-        if effect then
-            local dx = effect.x - player.x
-            local dy = effect.y - player.y
-            local forward = dx * cosine + dy * sine
-
-            if forward > 0.12 then
-                local side = -dx * sine + dy * cosine
-                local screen_x = VIEW_W * 0.5 + side / forward * PROJ_PLANE + sx
-                local floor_y = horizon + PROJ_PLANE * 0.5 / forward
+        if screen_x then
+            local column = math_floor(math_min(COLUMN_COUNT, math_max(1, screen_x / COLUMN_W + 1)))
+            if forward < (self._zbuffer[column] or 999) + 0.1 then
                 local screen_y = floor_y - effect.z * PROJ_PLANE / forward
-                local column = math_floor(math_min(COLUMN_COUNT, math_max(1, screen_x / COLUMN_W + 1)))
-
-                if forward < (self._zbuffer[column] or 999) + 0.1 then
-                    local life = math_max(0, effect.life / effect.max_life)
-                    local size = math_min(22, math_max(2, effect.size * PROJ_PLANE / forward))
-                    local color = effect.kind == "purge" and COLORS.corruption_hot
-                        or effect.kind == "sigil" and COLORS.gold_hot
-                        or effect.kind == "health" and COLORS.grace
-                        or COLORS.fervor
-
-                    if draw_circle(widget, screen_x, screen_y, size, color, color_alpha(color, color[1] * life), 21) then
-                        UIWidget.draw(widget, ui_renderer)
-                    end
-                else
-                    clear_circle(widget)
-                end
-            else
-                clear_circle(widget)
+                local life = math_max(0, effect.life / effect.max_life)
+                local size = math_min(22, math_max(2, effect.size * PROJ_PLANE / forward))
+                local color = effect.kind == "purge" and COLORS.corruption_hot
+                    or effect.kind == "sigil" and COLORS.gold_hot
+                    or effect.kind == "health" and COLORS.grace
+                    or COLORS.fervor
+                canvas:glow(screen_x, screen_y, size * 1.6, 21, color, 150 * life, 3)
+                canvas:circle(screen_x, screen_y, size * 0.35, 21.05, color, 255 * life, 1, 0.5, 8)
             end
-        else
-            clear_circle(widget)
         end
     end
 end
 
-function RaycasterView:_draw_motes(ui_renderer, theme, horizon, sx)
+function RaycasterView:_draw_motes(canvas, theme, horizon, sx)
     local time = self._game:time()
     local player = self._game:player()
 
-    for i = 1, MOTE_WIDGETS do
-        local widget = self._mote_widgets[i]
+    for i = 1, 60 do
         local depth = 0.45 + (i % 9) * 0.13
         local phase = i * 2.417 + time * (0.16 + (i % 5) * 0.035)
         local x = ((math_sin(phase + player.angle * depth) * 0.5 + 0.5) * VIEW_W + sx) % VIEW_W
         local y = (math_cos(phase * 0.71) * 0.5 + 0.5) * VIEW_H
-        local size = 1.2 + (i % 4) * 0.8
-        local alpha = y < horizon and 18 + i % 4 * 8 or 25 + i % 6 * 9
-
-        draw_circle(widget, x, y, size, theme.grid, alpha, 12)
-        UIWidget.draw(widget, ui_renderer)
+        local size = 0.8 + (i % 4) * 0.5
+        local twinkle = (math_sin(time * 2 + i) + 1) * 0.5
+        canvas:rect(x - size * 0.5, y - size * 0.5, size, size, 12, theme.wall_detail, 40 + twinkle * 60, 1, 0.3)
     end
 end
 
-function RaycasterView:_draw_speed_lines(ui_renderer, theme)
+function RaycasterView:_draw_speed_lines(canvas, theme, horizon)
     local intensity = self._game:dash_active() and 1 or math_max(0, (self._game:combo() - 8) / 20)
-
-    if intensity <= 0 then
-        for i = 1, SPEED_LINE_WIDGETS do clear_line(self._speed_line_widgets[i]) end
-        return
-    end
+    if intensity <= 0 then return end
 
     local time = self._game:time()
-    local center_x = VIEW_W * 0.5
-    local center_y = HORIZON
+    local cx, cy = VIEW_W * 0.5, horizon
 
-    for i = 1, SPEED_LINE_WIDGETS do
-        local widget = self._speed_line_widgets[i]
-        local angle = i / SPEED_LINE_WIDGETS * math_pi * 2 + time * 0.16
-        local inner = 70 + (i * 37 % 110)
+    for i = 1, 40 do
+        local angle = i / 40 * math_pi * 2 + time * 0.16
+        local inner = 70 + (i * 37 % 110) + (time * 400 + i * 50) % 120
         local length = 45 + (i * 29 % 105) * intensity
-        local x1 = center_x + math_cos(angle) * inner
-        local y1 = center_y + math_sin(angle) * inner * 0.72
-        local x2 = center_x + math_cos(angle) * (inner + length)
-        local y2 = center_y + math_sin(angle) * (inner + length) * 0.72
+        local ca, sa = math_cos(angle), math_sin(angle) * 0.72
+        canvas:line(cx + ca * inner, cy + sa * inner, cx + ca * (inner + length), cy + sa * (inner + length), 1 + intensity * 1.5, 22.5, theme.portal, 30 + intensity * 110)
+    end
+    canvas:glow(cx, cy, 160, 22.4, theme.portal, 50 * intensity, 5)
+end
 
-        draw_line(widget, x1, y1, x2, y2, 1.5 + intensity * 1.5, theme.portal, 35 + intensity * 105, 24)
-        UIWidget.draw(widget, ui_renderer)
+function RaycasterView:_draw_fist(canvas, theme, base_x, base_y, mirror, glow, dash, t)
+    local m = mirror
+    local function px(x) return base_x + x * m end
+    local steel = RC.steel
+
+    -- Armoured forearm rising from the bottom edge.
+    canvas:quad(px(-46), base_y + 130, px(-24), base_y + 34, px(34), base_y + 34, px(52), base_y + 130, 22, steel, 255, 0.5)
+    canvas:quad(px(-30), base_y + 130, px(-14), base_y + 40, px(22), base_y + 40, px(36), base_y + 130, 22.01, steel, 255, 0.78)
+    canvas:line(px(-14), base_y + 40, px(-30), base_y + 130, 2, 22.02, RC.steel_light, 170)
+    for band = 0, 1 do
+        local y = base_y + 60 + band * 34
+        local inset = band * 5
+        canvas:quad(px(-28 - inset), y, px(38 + inset), y, px(40 + inset), y + 7, px(-30 - inset), y + 7, 22.03, COLORS.gold, 255, 0.75)
+        canvas:line(px(-28 - inset), y, px(38 + inset), y, 1.2, 22.04, COLORS.gold_hot, 200)
+    end
+
+    -- Power coils glowing around the wrist.
+    local field = 0.45 + glow * 0.35 + dash * 0.8
+    canvas:glow(px(4), base_y + 36, 70 + dash * 30, 21.9, COLORS.fervor, 55 * field, 5)
+    canvas:ellipse(px(4), base_y + 36, 34, 7, 22.05, COLORS.fervor, 120 + glow * 100, 1, 0.3, 16)
+    canvas:ellipse(px(4), base_y + 36, 28, 4, 22.06, COLORS.white, 90 + glow * 90, 1, 0, 14)
+
+    -- Back of the hand.
+    canvas:quad(px(-30), base_y + 34, px(-34), base_y - 4, px(38), base_y - 6, px(36), base_y + 34, 22.1, theme.wall, 255, 0.62)
+    canvas:quad(px(-22), base_y + 30, px(-24), base_y + 2, px(28), base_y, px(28), base_y + 30, 22.11, theme.wall, 255, 0.95)
+    canvas:line(px(-24), base_y + 2, px(28), base_y, 1.5, 22.12, theme.wall_detail, 220)
+    canvas:circle(px(2), base_y + 16, 6, 22.13, COLORS.gold, 255, 0.8, 0, 12)
+    canvas:circle(px(2), base_y + 16, 3, 22.14, COLORS.corruption_hot, 230, 1, 0.2, 8)
+
+    -- Thumb wrapped over the inner side.
+    canvas:ellipse(px(38), base_y + 12, 10, 18, 22.15, steel, 255, 0.6, 0, 14)
+    canvas:ellipse(px(36), base_y + 8, 6, 12, 22.16, steel, 255, 0.9, 0, 12)
+
+    -- Knuckle plates, lit from above.
+    for k = 0, 3 do
+        local kx = px(-24 + k * 17)
+        local ky = base_y - 10 + math_abs(k - 1.5) * 2
+        canvas:circle(kx, ky + 2, 10, 22.2, RC.shadow, 120, 1, 0, 12)
+        canvas:circle(kx, ky, 9, 22.21, steel, 255, 0.7, 0, 14)
+        canvas:circle(kx - 2 * m, ky - 2.5, 6, 22.22, steel, 255, 1, 0.2, 12)
+        canvas:circle(kx - 3 * m, ky - 4, 2, 22.23, COLORS.white, 180, 1, 0, 6)
+    end
+
+    -- Crackling power field arcs.
+    if dash > 0 or math_sin(t * 7) > 0.55 then
+        local seed = math_floor(t * 30) + (m > 0 and 17 or 3)
+        for arc = 1, 1 + dash * 2 do
+            local lx, ly = px(-24 + hash(seed, arc) * 52), base_y - 18
+            for s = 1, 5 do
+                local nx = lx + (hash(seed + arc, s * 3) - 0.5) * 22
+                local ny = ly - 7 - hash(seed + arc, s * 5) * 12
+                canvas:line(lx, ly, nx, ny, 4, 22.29, COLORS.fervor, 90)
+                canvas:line(lx, ly, nx, ny, 1.3, 22.3, COLORS.white, 230)
+                lx, ly = nx, ny
+            end
+        end
     end
 end
 
-function RaycasterView:_draw_gauntlets(ui_renderer, theme)
-    local widgets = self._gauntlet_widgets
+function RaycasterView:_draw_gauntlets(canvas, theme)
     local time = self._game:time()
     local dash = self._game:dash_active() and 1 or 0
     local bob = math_sin(time * 6.5) * 3
     local reach = dash * 46
-    local glow = 130 + math_sin(time * 4.2) * 35
+    local glow = (math_sin(time * 4.2) + 1) * 0.5
 
-    draw_world_rect(widgets[1], 36 + reach, 407 + bob, 92, 73, COLORS.black, 225, 23)
-    draw_world_rect(widgets[2], 49 + reach, 390 + bob, 72, 61, theme.wall, 245, 24)
-    draw_world_rect(widgets[3], 75 + reach, 377 + bob, 37, 40, theme.wall_detail, 250, 25)
-    draw_world_rect(widgets[4], 51 + reach, 402 + bob, 12, 47, COLORS.fervor, glow, 26)
-    draw_world_rect(widgets[5], 91 + reach, 388 + bob, 10, 25, COLORS.gold_hot, 175, 26)
-    draw_world_rect(widgets[6], 19 + reach, 443 + bob, 108, 37, theme.wall_side, 250, 24)
+    self:_draw_fist(canvas, theme, 92 + reach, 408 + bob, 1, glow, dash, time)
+    self:_draw_fist(canvas, theme, 508 - reach, 408 - bob, -1, glow, dash, time)
+end
 
-    draw_world_rect(widgets[7], 472 - reach, 407 - bob, 92, 73, COLORS.black, 225, 23)
-    draw_world_rect(widgets[8], 479 - reach, 390 - bob, 72, 61, theme.wall, 245, 24)
-    draw_world_rect(widgets[9], 488 - reach, 377 - bob, 37, 40, theme.wall_detail, 250, 25)
-    draw_world_rect(widgets[10], 537 - reach, 402 - bob, 12, 47, COLORS.fervor, glow, 26)
-    draw_world_rect(widgets[11], 499 - reach, 388 - bob, 10, 25, COLORS.gold_hot, 175, 26)
-    draw_world_rect(widgets[12], 473 - reach, 443 - bob, 108, 37, theme.wall_side, 250, 24)
+function RaycasterView:_draw_post(canvas, theme, horizon)
+    local t = self._time
 
-    if dash > 0 then
-        draw_world_rect(widgets[13], 120, 448, 145, 12, COLORS.fervor, 80, 22)
-        draw_world_rect(widgets[14], 335, 448, 145, 12, COLORS.fervor, 80, 22)
-        draw_world_rect(widgets[15], 180, 463, 95, 7, COLORS.gold_hot, 75, 22)
-        draw_world_rect(widgets[16], 325, 463, 95, 7, COLORS.gold_hot, 75, 22)
-    else
-        for i = 13, 16 do clear_rect(widgets[i]) end
+    if self._pickup_flash > 0 then
+        canvas:vignette(0, 0, VIEW_W, VIEW_H, 120, 24.3, 160 * self._pickup_flash, 6, self._pickup_color)
+    end
+    if self._damage_flash > 0 then
+        canvas:vignette(0, 0, VIEW_W, VIEW_H, 150, 24.35, 255 * self._damage_flash, 8, COLORS.warning)
     end
 
-    draw_world_rect(widgets[17], 50 + reach, 392 + bob, 65, 3, COLORS.gold_hot, 125, 26)
-    draw_world_rect(widgets[18], 480 - reach, 392 - bob, 65, 3, COLORS.gold_hot, 125, 26)
-
-    for i = 1, GAUNTLET_WIDGETS do
-        if widgets[i].style.gfx.color[1] > 0 then UIWidget.draw(widgets[i], ui_renderer) end
-    end
+    canvas:crt(0, 0, VIEW_W, VIEW_H, t, 24.5, { tint = theme.grid, scan_alpha = 26, vignette_depth = 110, vignette_alpha = 190, noise_count = 16 })
 end
 
 function RaycasterView:destroy()
+    self._canvas = nil
+    self._particles = nil
     RaycasterView.super.destroy(self)
 end
 

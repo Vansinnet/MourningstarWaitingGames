@@ -45,6 +45,10 @@ function SnakeGame:state() return self._state end
 function SnakeGame:get_apple() return self._apple_x, self._apple_y end
 function SnakeGame:get_cells() return self._cells end
 function SnakeGame:get_dir() return self._dx, self._dy end
+function SnakeGame:tick_fraction()
+	if self._state ~= "playing" then return 0 end
+	return math.min(1, self._timer / TICK)
+end
 
 function SnakeGame:_random_col()
 	return math_random(0, COLS - 1)

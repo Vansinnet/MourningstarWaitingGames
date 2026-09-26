@@ -2,9 +2,16 @@ local mod = get_mod("MourningstarWaitingGames")
 local UIWidget = require("scripts/managers/ui/ui_widget")
 local UIWorkspaceSettings = require("scripts/settings/ui/ui_workspace_settings")
 local AuspexFrame = mod:io_dofile("MourningstarWaitingGames/scripts/mods/MourningstarWaitingGames/MourningstarWaitingGames_auspex_frame")
+local Gfx = mod:io_dofile("MourningstarWaitingGames/scripts/mods/MourningstarWaitingGames/MourningstarWaitingGames_canvas")
 
+local math_abs = math.abs
+local math_cos = math.cos
 local math_floor = math.floor
+local math_max = math.max
 local math_min = math.min
+local math_pi = math.pi
+local math_sin = math.sin
+local math_sqrt = math.sqrt
 
 local BOARD_W = 600
 local BOARD_H = 400
@@ -27,6 +34,12 @@ local COLORS = {
     hud         = { 255, 131, 233, 192 },
     hud_dim     = { 220, 80, 161, 139 },
     title       = { 255, 181, 240, 210 },
+    court_top   = { 255, 4, 22, 27 },
+    court_low   = { 255, 1, 7, 10 },
+    dot         = { 255, 90, 220, 185 },
+    white       = { 255, 255, 255, 255 },
+    spark_hot   = { 255, 255, 236, 170 },
+    fast        = { 255, 255, 170, 90 },
 }
 
 local scenegraph = {
@@ -73,33 +86,6 @@ local scenegraph = {
 	},
 }
 
-local RECT_DEF = UIWidget.create_definition({
-	{ pass_type = "texture", style_id = "gfx",
-		value = "content/ui/materials/backgrounds/default_square",
-		style = { hdr = true, color = { 0, 0, 0, 0 } },
-	}
-}, "game_area", nil, { 10, 10 })
-
-local function circle_def(size)
-	return UIWidget.create_definition({
-		{ pass_type = "circle", style_id = "gfx",
-			style = { color = { 0, 0, 0, 0 } },
-		}
-	}, "game_area", nil, { size, size })
-end
-
-local PADDLE_DEF = UIWidget.create_definition({
-    { pass_type = "texture", style_id = "gfx",
-        value = "content/ui/materials/backgrounds/default_square",
-        style = { hdr = true, color = { 0, 0, 0, 0 } } },
-    { pass_type = "texture", value = "content/ui/materials/backgrounds/default_square",
-        style = { color = { 150, 7, 23, 27 }, size = { PADDLE_W - 3, PADDLE_H - 3 }, offset = { 3, 3, 1 } } },
-    { pass_type = "texture", value = "content/ui/materials/backgrounds/default_square",
-        style = { hdr = true, color = { 175, 224, 255, 238 }, size = { 2, PADDLE_H - 4 }, offset = { 1, 2, 2 } } },
-    { pass_type = "texture", value = "content/ui/materials/backgrounds/default_square",
-        style = { hdr = true, color = { 130, 224, 255, 238 }, size = { PADDLE_W - 2, 2 }, offset = { 1, 1, 2 } } },
-}, "game_area", nil, { PADDLE_W, PADDLE_H })
-
 local widget_definitions = {
 	panel_bg = UIWidget.create_definition({
 		{ pass_type = "texture",
@@ -113,12 +99,6 @@ local widget_definitions = {
             style = { hdr = true, color = COLORS.bg },
 		}
 	}, "game_area", nil, { BOARD_W, BOARD_H }),
-	net = UIWidget.create_definition({
-		{ pass_type = "texture", style_id = "gfx",
-			value = "content/ui/materials/backgrounds/default_square",
-			style = { hdr = true, color = { 45, 0, 90, 40 }, offset = { BOARD_W / 2 - 1, 0, 0 } },
-		}
-	}, "game_area", nil, { 2, BOARD_H }),
 	scanner_noise = UIWidget.create_definition({
 		{ pass_type = "texture",
 			value = "content/ui/materials/backgrounds/scanner/scanner_background_noise",
@@ -243,22 +223,8 @@ AuspexFrame.add_inner_border(widget_definitions, {
     prefix = "pong_game_border",
 })
 
--- Broad, low-contrast court markings stay behind the ball and paddles.
 for side = 1, 2 do
-    local x = side == 1 and 0 or BOARD_W / 2
     local accent = side == 1 and COLORS.paddle or COLORS.cpu
-    widget_definitions["court_half_" .. side] = UIWidget.create_definition({
-        { pass_type = "texture", value = "content/ui/materials/backgrounds/default_square",
-            style = { color = side == 1 and { 50, 18, 48, 43 } or { 40, 50, 33, 27 },
-                size = { BOARD_W / 2, BOARD_H }, offset = { x, 0, 1 } } },
-        { pass_type = "texture", value = "content/ui/materials/backgrounds/default_square",
-            style = { color = { 90, 49, 98, 90 }, size = { 1, BOARD_H - 48 }, offset = { x + (side == 1 and 46 or 253), 24, 2 } } },
-        { pass_type = "texture", value = "content/ui/materials/backgrounds/default_square",
-            style = { hdr = true, color = accent, size = { 46, 2 }, offset = { x + (side == 1 and 0 or 254), 0, 3 } } },
-        { pass_type = "texture", value = "content/ui/materials/backgrounds/default_square",
-            style = { hdr = true, color = accent, size = { 46, 2 }, offset = { x + (side == 1 and 0 or 254), BOARD_H - 2, 3 } } },
-    }, "game_area", nil, { BOARD_W / 2, BOARD_H })
-
     widget_definitions["score_panel_" .. side] = UIWidget.create_definition({
         { pass_type = "texture", value = "content/ui/materials/backgrounds/default_square",
             style = { color = { 255, 10, 25, 27 }, size = { 200, 34 }, offset = { 0, -7, -2 } } },
@@ -267,178 +233,282 @@ for side = 1, 2 do
     }, side == 1 and "score_area" or "cpu_score_area", nil, { 200, 34 })
 end
 
-widget_definitions.center_disc = UIWidget.create_definition({
-    { pass_type = "circle", style = { color = { 110, 35, 76, 72 }, size = { 104, 104 }, offset = { 248, 148, 1 } } },
-    { pass_type = "circle", style = { color = COLORS.bg, size = { 100, 100 }, offset = { 250, 150, 2 } } },
-}, "game_area", nil, { 104, 104 })
-
 local definitions = { scenegraph_definition = scenegraph, widget_definitions = widget_definitions }
 
 local PongView = class("PongView", "BaseView")
 
+local TRAIL_POINTS = 18
+
 function PongView:init(settings, context)
-	PongView.super.init(self, definitions, settings, context)
-	self._game = context.game
-	self._no_cursor = true
+    PongView.super.init(self, definitions, settings, context)
+    self._game = context.game
+    self._no_cursor = true
 
-	self._player_paddle_glow = UIWidget.init("pong_player_glow", RECT_DEF)
-    self._player_paddle = UIWidget.init("pong_player", PADDLE_DEF)
-	self._cpu_paddle_glow = UIWidget.init("pong_cpu_glow", RECT_DEF)
-    self._cpu_paddle = UIWidget.init("pong_cpu", PADDLE_DEF)
-	self._ball_glow = UIWidget.init("pong_ball_glow", circle_def(BALL_SIZE * 3.4))
-	self._ball = UIWidget.init("pong_ball", circle_def(BALL_SIZE))
-
-	self._net_widgets = {}
-	for i = 1, 11 do
-		self._net_widgets[i] = UIWidget.init("pong_net_dash_" .. i, RECT_DEF)
-	end
-
-	self._trail_widgets = {}
-	self._ball_trail = {}
-	for i = 1, 8 do
-		self._trail_widgets[i] = UIWidget.init("pong_ball_trail_" .. i, circle_def(BALL_SIZE))
-		self._ball_trail[i] = { x = BOARD_W / 2, y = BOARD_H / 2 }
-	end
+    self._canvas = Gfx.Canvas.new(BOARD_W, BOARD_H, 4200)
+    self._particles = Gfx.Particles.new(260)
+    self._shaker = Gfx.Shaker.new()
+    self._time = 0
+    self._trail = {}
+    for i = 1, TRAIL_POINTS do
+        self._trail[i] = { x = BOARD_W * 0.5, y = BOARD_H * 0.5 }
+    end
+    self._player_flash = 0
+    self._cpu_flash = 0
+    self._score_flash_left = 0
+    self._score_flash_right = 0
+    self._prev = nil
+    self._ball_color = { 255, 0, 0, 0 }
 end
 
 function PongView:dialogue_system() return nil end
 function PongView:is_using_input() return false end
 
 function PongView:update(dt, t, input_service)
-	if self._game then self._game:update(dt) end
-	return PongView.super.update(self, dt, t, input_service)
+    if self._game then self._game:update(dt) end
+    return PongView.super.update(self, dt, t, input_service)
+end
+
+function PongView:_detect_events(bx, by)
+    local game = self._game
+    local prev = self._prev
+    local score, cpu_score = game:score(), game:cpu_score()
+
+    if not prev then
+        self._prev = { x = bx, y = by, vx = 0, vy = 0, score = score, cpu = cpu_score }
+        return
+    end
+
+    local particles = self._particles
+    local vx = bx - prev.x
+    local vy = by - prev.y
+    local teleported = vx * vx + vy * vy > 6400
+
+    if score > prev.score then
+        self:_goal_burst(BOARD_W - 4, prev.y, math_pi, COLORS.paddle)
+        self._score_flash_right = 1
+    elseif cpu_score > prev.cpu then
+        self:_goal_burst(4, prev.y, 0, COLORS.cpu)
+        self._score_flash_left = 1
+    elseif not teleported then
+        if prev.vx < 0 and vx > 0 and bx < BOARD_W * 0.3 then
+            self._player_flash = 1
+            particles:burst(bx - BALL_SIZE * 0.5, by, 18, 90, 360, 0.2, 0.5, 1.6, COLORS.paddle, "spark", 3.5, 0, 0, 1.9)
+            particles:shockwave(bx - BALL_SIZE * 0.5, by, 34, 0.35, COLORS.ball, 2.5)
+            particles:flash(bx, by, 26, 0.18, COLORS.paddle)
+            self._shaker:add(0.18)
+        elseif prev.vx > 0 and vx < 0 and bx > BOARD_W * 0.7 then
+            self._cpu_flash = 1
+            particles:burst(bx + BALL_SIZE * 0.5, by, 18, 90, 360, 0.2, 0.5, 1.6, COLORS.cpu, "spark", 3.5, 0, math_pi, 1.9)
+            particles:shockwave(bx + BALL_SIZE * 0.5, by, 34, 0.35, COLORS.ball, 2.5)
+            particles:flash(bx, by, 26, 0.18, COLORS.cpu)
+            self._shaker:add(0.18)
+        end
+
+        if prev.vy < 0 and vy > 0 and by < 40 then
+            particles:burst(bx, 1, 9, 60, 220, 0.15, 0.35, 1.2, COLORS.ball_glow, "spark", 4, 0, math_pi * 0.5, 1.8)
+        elseif prev.vy > 0 and vy < 0 and by > BOARD_H - 40 then
+            particles:burst(bx, BOARD_H - 1, 9, 60, 220, 0.15, 0.35, 1.2, COLORS.ball_glow, "spark", 4, 0, -math_pi * 0.5, 1.8)
+        end
+    end
+
+    if teleported then
+        for i = 1, TRAIL_POINTS do
+            self._trail[i].x = bx
+            self._trail[i].y = by
+        end
+        vx, vy = 0, 0
+    end
+
+    if vx ~= 0 then prev.vx = vx end
+    if vy ~= 0 then prev.vy = vy end
+    prev.x, prev.y = bx, by
+    prev.score, prev.cpu = score, cpu_score
+end
+
+function PongView:_goal_burst(x, y, angle, color)
+    local particles = self._particles
+    particles:burst(x, y, 46, 120, 520, 0.35, 0.95, 2.2, color, "spark", 2.2, 0, angle, 2.4)
+    particles:burst(x, y, 16, 30, 160, 0.6, 1.3, 3.5, COLORS.spark_hot, "ember", 1.6, 25, angle, 2.8)
+    particles:shockwave(x, y, 120, 0.6, color, 4)
+    particles:shockwave(x, y, 70, 0.45, COLORS.white, 2)
+    particles:flash(x, y, 90, 0.35, color)
+    self._shaker:add(0.55)
+end
+
+function PongView:_update_trail(bx, by)
+    local trail = self._trail
+
+    for i = TRAIL_POINTS, 2, -1 do
+        trail[i].x = trail[i - 1].x
+        trail[i].y = trail[i - 1].y
+    end
+
+    trail[1].x = bx
+    trail[1].y = by
+end
+
+function PongView:_draw_court(canvas, t, bx, by, level)
+    canvas:vgradient(0, 0, BOARD_W, BOARD_H, 0.2, COLORS.court_top, COLORS.court_low, 255, 255, 24)
+    canvas:glow(BOARD_W * 0.5, BOARD_H * 0.5, 190, 0.3, COLORS.paddle_glow, 34 + level * 2, 5)
+
+    local left_flash = self._score_flash_left
+    local right_flash = self._score_flash_right
+    canvas:hgradient(0, 0, 110, BOARD_H, 0.4, COLORS.paddle, COLORS.paddle, 38 + left_flash * 140, 0, 12)
+    canvas:hgradient(BOARD_W - 110, 0, 110, BOARD_H, 0.4, COLORS.cpu, COLORS.cpu, 0, 38 + right_flash * 140, 12)
+
+    -- Dot matrix lit by the ball's proximity.
+    for gy = 12.5, BOARD_H, 25 do
+        for gx = 12.5, BOARD_W, 25 do
+            local dx = gx - bx
+            local dy = gy - by
+            local d2 = dx * dx + dy * dy
+            local lit = d2 < 19600 and (1 - math_sqrt(d2) / 140) or 0
+            local wave = (math_sin(t * 1.7 - gx * 0.02 + gy * 0.013) + 1) * 0.5
+            local alpha = 14 + wave * 12 + lit * lit * 170
+            local size = 1.5 + lit * 1.5
+            canvas:rect(gx - size * 0.5, gy - size * 0.5, size, size, 0.6, COLORS.dot, alpha, 1, lit * 0.4)
+        end
+    end
+
+    -- Centre rings and energy line.
+    local cx, cy = BOARD_W * 0.5, BOARD_H * 0.5
+    canvas:ring(cx, cy, 58, 1.4, 0.8, COLORS.net, 120, 48)
+    canvas:ring(cx, cy, 58, 6, 0.75, COLORS.net, 22, 48)
+    for i = 0, 3 do
+        local a0 = t * 0.6 + i * math_pi * 0.5
+        canvas:ring(cx, cy, 68, 2, 0.8, COLORS.paddle, 90, 8, a0, a0 + 0.9)
+        local b0 = -t * 0.9 + i * math_pi * 0.5 + 0.4
+        canvas:ring(cx, cy, 46, 1.2, 0.8, COLORS.cpu, 70, 6, b0, b0 + 0.6)
+    end
+    canvas:circle(cx, cy, 4, 0.85, COLORS.net, 170)
+
+    local pulse_y = (t * 220) % (BOARD_H + 120) - 60
+    for i = 0, 10 do
+        local y0 = 12 + i * 36
+        local d = math_abs(y0 + 9 - pulse_y)
+        local boost = d < 60 and (1 - d / 60) or 0
+        canvas:rect(cx - 3, y0 - 2, 6, 22, 0.9, COLORS.net, 18 + boost * 50)
+        canvas:rect(cx - 1, y0, 2, 18, 0.95, COLORS.net, 110 + boost * 145, 1, boost * 0.6)
+    end
+end
+
+function PongView:_draw_paddle(canvas, x, center_y, color, flash, t, facing)
+    local top = center_y - PADDLE_H * 0.5
+    local layer = 4
+
+    canvas:soft_rect(x, top, PADDLE_W, PADDLE_H, 12 + flash * 10, layer - 0.2, color, 55 + flash * 150, 5)
+    canvas:bevel_box(x, top, PADDLE_W, PADDLE_H, 2.5, layer, color, 255, 0.6 + flash * 0.3, 0.38)
+
+    for k = 0, 3 do
+        local y = top + 3 + ((t * 95 * facing + k * 17.5) % (PADDLE_H - 12))
+        canvas:rect(x + PADDLE_W * 0.5 - 1, y, 2, 6, layer + 0.05, COLORS.white, 150)
+    end
+
+    canvas:rect(x - 1, top - 1, PADDLE_W + 2, 2, layer + 0.06, color, 255, 1, 0.8)
+    canvas:rect(x - 1, top + PADDLE_H - 1, PADDLE_W + 2, 2, layer + 0.06, color, 255, 1, 0.8)
+
+    if flash > 0 then
+        canvas:rect(x, top, PADDLE_W, PADDLE_H, layer + 0.07, COLORS.white, flash * 210)
+    end
+
+    -- Emitter light spilled onto the court.
+    local spill_x = facing > 0 and x + PADDLE_W or x - 60
+    canvas:hgradient(spill_x, top - 6, 60, PADDLE_H + 12, layer - 0.3, color, color, facing > 0 and 45 + flash * 80 or 0, facing > 0 and 0 or 45 + flash * 80, 8)
+end
+
+function PongView:_draw_ball(canvas, bx, by, speed)
+    local heat = math_min(1, math_max(0, (speed - 150) / 450))
+    local color = Gfx.Canvas.lerp_color(self._ball_color, COLORS.ball_glow, COLORS.fast, heat)
+    color[1] = 255
+    local trail = self._trail
+
+    for i = 1, TRAIL_POINTS - 1 do
+        local p1 = trail[i]
+        local p2 = trail[i + 1]
+        local k = 1 - (i - 1) / (TRAIL_POINTS - 1)
+        canvas:line(p1.x, p1.y, p2.x, p2.y, BALL_SIZE * 1.6 * k, 5, color, 40 * k)
+        canvas:line(p1.x, p1.y, p2.x, p2.y, BALL_SIZE * 0.85 * k, 5.01, color, 150 * k * k, 1, 0.3 * k)
+    end
+
+    canvas:glow(bx, by, BALL_SIZE * (2.6 + heat), 5.5, color, 120, 5)
+    canvas:orb(bx, by, BALL_SIZE * 0.5, 5.6, COLORS.ball, 255, 2)
 end
 
 function PongView:_draw_widgets(dt, t, input_service, ui_renderer, render_settings)
-	local hsw = self._widgets_by_name.highscore_text
-	if hsw then hsw.content.text = mod:localize("pong_highscore") .. " " .. (mod:get("pong_highscore") or 0) end
+    local game = self._game
+    local hsw = self._widgets_by_name.highscore_text
+    if hsw then hsw.content.text = mod:localize("pong_highscore") .. " " .. (mod:get("pong_highscore") or 0) end
 
-	PongView.super._draw_widgets(self, dt, t, input_service, ui_renderer, render_settings)
+    if game then
+        local sw = self._widgets_by_name.score_text
+        if sw then sw.content.text = string.format("%d", game:score()) end
+        local cw = self._widgets_by_name.cpu_score_text
+        if cw then cw.content.text = string.format("%d", game:cpu_score()) end
+        local lw = self._widgets_by_name.level_text
+        if lw then
+            if game:state() == "done" then
+                lw.content.text = "ALL LEVELS CLEARED!"
+                lw.style.text.text_color = COLORS.ball
+            else
+                lw.content.text = string.format("Level %d", game:level())
+                lw.style.text.text_color = COLORS.hud_dim
+            end
+        end
 
-	if not self._game then return end
+        local hot_noise = self._widgets_by_name.scanner_noise_hot
+        if hot_noise then
+            hot_noise.style.noise.color[1] = 12 + math_floor(math_min(game:level(), 20)) + math_floor(self._shaker.trauma * 60)
+        end
+    end
 
-	local sw = self._widgets_by_name.score_text
-	if sw then sw.content.text = string.format("%d", self._game:score()) end
-	local cw = self._widgets_by_name.cpu_score_text
-	if cw then cw.content.text = string.format("%d", self._game:cpu_score()) end
-	local lw = self._widgets_by_name.level_text
-	if lw then
-		if self._game:state() == "done" then
-			lw.content.text = "ALL LEVELS CLEARED!"
-			lw.style.text.text_color = COLORS.ball
-		else
-			lw.content.text = string.format("Level %d", self._game:level())
-			lw.style.text.text_color = COLORS.hud_dim
-		end
-	end
+    PongView.super._draw_widgets(self, dt, t, input_service, ui_renderer, render_settings)
 
-	local hot_noise = self._widgets_by_name.scanner_noise_hot
-	if hot_noise then
-        local pulse = 12 + math_floor(math_min(self._game:level(), 20))
-		hot_noise.style.noise.color[1] = pulse
-	end
+    if not game then return end
 
-	for i = 1, #self._net_widgets do
-		local nw = self._net_widgets[i]
-        nw.offset[1] = BOARD_W / 2 - 1
-		nw.offset[2] = 12 + (i - 1) * 36
-        nw.offset[3] = 3
-        nw.content.size[1] = 2
-		nw.content.size[2] = 18
-		nw.style.gfx.color = COLORS.net
-		UIWidget.draw(nw, ui_renderer)
-	end
+    dt = math_min(dt or 0.016, 0.05)
+    self._time = self._time + dt
 
-	local pg = self._player_paddle_glow
-	pg.offset[1] = 0
-	pg.offset[2] = self._game:get_player_y() - PADDLE_H / 2 - 8
-    pg.content.size[1] = PADDLE_W + 7
-	pg.content.size[2] = PADDLE_H + 16
-	pg.style.gfx.color = COLORS.paddle_glow
-	pg.offset[3] = 2
-	UIWidget.draw(pg, ui_renderer)
+    local bx = game:get_ball_x()
+    local by = game:get_ball_y()
+    self:_detect_events(bx, by)
+    self:_update_trail(bx, by)
+    self._particles:update(dt)
+    self._shaker:update(dt, 8)
+    self._player_flash = math_max(0, self._player_flash - dt * 4)
+    self._cpu_flash = math_max(0, self._cpu_flash - dt * 4)
+    self._score_flash_left = math_max(0, self._score_flash_left - dt * 1.8)
+    self._score_flash_right = math_max(0, self._score_flash_right - dt * 1.8)
 
-	local pp = self._player_paddle
-    pp.offset[1] = 0
-	pp.offset[2] = self._game:get_player_y() - PADDLE_H / 2
-	pp.content.size[1] = PADDLE_W
-	pp.content.size[2] = PADDLE_H
-	pp.style.gfx.color = COLORS.paddle
-	pp.offset[3] = 4
-	UIWidget.draw(pp, ui_renderer)
+    local canvas = self._canvas
+    if not canvas:begin(ui_renderer, self:_scenegraph_world_position("game_area")) then return end
 
-	local cg = self._cpu_paddle_glow
-    cg.offset[1] = BOARD_W - PADDLE_W - 7
-	cg.offset[2] = self._game:get_cpu_y() - PADDLE_H / 2 - 8
-    cg.content.size[1] = PADDLE_W + 7
-	cg.content.size[2] = PADDLE_H + 16
-	cg.style.gfx.color = COLORS.cpu_glow
-	cg.offset[3] = 2
-	UIWidget.draw(cg, ui_renderer)
+    local time = self._time
+    local prev = self._prev
+    local speed = prev and math_sqrt(prev.vx * prev.vx + prev.vy * prev.vy) / dt or 0
 
-	local cp = self._cpu_paddle
-    cp.offset[1] = BOARD_W - PADDLE_W
-	cp.offset[2] = self._game:get_cpu_y() - PADDLE_H / 2
-	cp.content.size[1] = PADDLE_W
-	cp.content.size[2] = PADDLE_H
-	cp.style.gfx.color = COLORS.cpu
-	cp.offset[3] = 4
-	UIWidget.draw(cp, ui_renderer)
+    self:_draw_court(canvas, time, bx, by, game:level())
+    canvas:set_shake(self._shaker.x, self._shaker.y)
+    self:_draw_paddle(canvas, 0, game:get_player_y(), COLORS.paddle, self._player_flash, time, 1)
+    self:_draw_paddle(canvas, BOARD_W - PADDLE_W, game:get_cpu_y(), COLORS.cpu, self._cpu_flash, time, -1)
+    self:_draw_ball(canvas, bx, by, speed)
+    self._particles:draw(canvas, 6)
+    canvas:set_shake(0, 0)
+    canvas:crt(0, 0, BOARD_W, BOARD_H, time, 7, { tint = COLORS.dot, vignette_depth = 60, vignette_alpha = 140 })
 
-	local bx = self._game:get_ball_x()
-	local by = self._game:get_ball_y()
-	local trail = self._ball_trail
-	local last = trail[1]
-	if last and ((bx - last.x) * (bx - last.x) + (by - last.y) * (by - last.y)) > 6400 then
-		for i = 1, #trail do
-			trail[i].x = bx
-			trail[i].y = by
-		end
-	else
-		for i = #trail, 2, -1 do
-			trail[i].x = trail[i - 1].x
-			trail[i].y = trail[i - 1].y
-		end
-		trail[1].x = bx
-		trail[1].y = by
-	end
+    if game:state() == "done" then
+        local pulse = (math_sin(time * 3) + 1) * 0.5
+        canvas:rect(0, BOARD_H * 0.5 - 30, BOARD_W, 60, 6.5, COLORS.court_low, 170)
+        canvas:hgradient(0, BOARD_H * 0.5 - 31, BOARD_W * 0.5, 2, 6.6, COLORS.paddle, COLORS.white, 0, 200 + pulse * 55)
+        canvas:hgradient(BOARD_W * 0.5, BOARD_H * 0.5 - 31, BOARD_W * 0.5, 2, 6.6, COLORS.white, COLORS.cpu, 200 + pulse * 55, 0)
+    end
 
-	for i = #trail, 2, -1 do
-		local tw = self._trail_widgets[i]
-		local point = trail[i]
-        local size = BALL_SIZE * (1 - (i - 1) * 0.085)
-		local color = tw.style.gfx.color
-        color[1] = 115 - i * 12
-		color[2] = COLORS.ball_glow[2]
-		color[3] = COLORS.ball_glow[3]
-		color[4] = COLORS.ball_glow[4]
-		tw.offset[1] = point.x - size / 2
-		tw.offset[2] = point.y - size / 2
-		tw.offset[3] = 5
-		tw.content.size[1] = size
-		tw.content.size[2] = size
-		UIWidget.draw(tw, ui_renderer)
-	end
-
-	local glow = self._ball_glow
-    glow.offset[1] = bx - BALL_SIZE * 1.15
-    glow.offset[2] = by - BALL_SIZE * 1.15
-	glow.offset[3] = 6
-    glow.content.size[1] = BALL_SIZE * 2.3
-    glow.content.size[2] = BALL_SIZE * 2.3
-	glow.style.gfx.color = COLORS.ball_glow
-	UIWidget.draw(glow, ui_renderer)
-
-	local b = self._ball
-	b.offset[1] = bx - BALL_SIZE / 2
-	b.offset[2] = by - BALL_SIZE / 2
-	b.content.size[1] = BALL_SIZE
-	b.content.size[2] = BALL_SIZE
-	b.style.gfx.color = COLORS.ball
-	b.offset[3] = 7
-	UIWidget.draw(b, ui_renderer)
+    canvas:finish()
 end
 
-function PongView:destroy() PongView.super.destroy(self) end
+function PongView:destroy()
+    self._canvas = nil
+    self._particles = nil
+    PongView.super.destroy(self)
+end
 
 return PongView

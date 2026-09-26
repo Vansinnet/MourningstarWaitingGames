@@ -2,9 +2,12 @@ local mod = get_mod("MourningstarWaitingGames")
 local UIWidget = require("scripts/managers/ui/ui_widget")
 local UIWorkspaceSettings = require("scripts/settings/ui/ui_workspace_settings")
 local AuspexFrame = mod:io_dofile("MourningstarWaitingGames/scripts/mods/MourningstarWaitingGames/MourningstarWaitingGames_auspex_frame")
+local Gfx = mod:io_dofile("MourningstarWaitingGames/scripts/mods/MourningstarWaitingGames/MourningstarWaitingGames_canvas")
 
 local math_cos = math.cos
+local math_abs = math.abs
 local math_floor = math.floor
+local math_pi = math.pi
 local math_max = math.max
 local math_min = math.min
 local math_sin = math.sin
@@ -13,14 +16,6 @@ local math_sqrt = math.sqrt
 local RENDER_SIZE = 600
 local GAME_W = 600
 local GAME_H = 600
-local STAR_WIDGETS = 90
-local ROCK_LINE_WIDGETS = 864 -- 12 starting rocks * 3 * 2 fragments * 12 shape edges.
-local BULLET_WIDGETS = 12
-local PARTICLE_WIDGETS = 120
-local DEBRIS_WIDGETS = 70
-local SHIP_LINE_WIDGETS = 12
-local TRAIL_WIDGETS = 18
-
 local COLORS = {
     bg = { 245, 0, 5, 2 },
     grid = { 35, 0, 130, 70 },
@@ -48,17 +43,21 @@ local COLORS = {
     warning = { 255, 255, 90, 50 },
     message = { 210, 100, 255, 175 },
     hidden = { 0, 0, 0, 0 },
-}
-
-local SHIP_POINTS = {
-    { 18, 0 }, { -12, -12 }, { -7, -4 },
-    { -14, 0 }, { -7, 4 }, { -12, 12 },
-}
-local SHIP_LINES = {
-    { 1, 2, 255, 2.0 }, { 2, 3, 210, 1.5 },
-    { 3, 4, 180, 1.5 }, { 4, 5, 180, 1.5 },
-    { 5, 6, 210, 1.5 }, { 6, 1, 255, 2.0 },
-    { 3, 5, 200, 1.5 },
+    space_top = { 255, 2, 8, 14 },
+    space_low = { 255, 4, 3, 12 },
+    nebula_a = { 255, 30, 120, 160 },
+    nebula_b = { 255, 110, 40, 150 },
+    nebula_c = { 255, 20, 170, 90 },
+    stone = { 255, 88, 104, 92 },
+    stone_dark = { 255, 14, 22, 20 },
+    crater = { 255, 8, 14, 12 },
+    hull = { 255, 150, 170, 165 },
+    hull_dark = { 255, 40, 60, 58 },
+    canopy = { 255, 90, 230, 255 },
+    shield = { 255, 90, 210, 255 },
+    white = { 255, 255, 255, 255 },
+    shadow = { 255, 0, 0, 0 },
+    lock = { 255, 255, 80, 60 },
 }
 
 local scenegraph = {
@@ -108,42 +107,6 @@ local scenegraph = {
         size = { 560, 22 }, position = { 0, 272, 20 },
     },
 }
-
-local function line_def(thickness)
-    return UIWidget.create_definition({
-        { pass_type = "triangle", style_id = "tri1",
-            style = { color = { 0, 0, 0, 0 }, triangle_corners = { { 0, 0 }, { 0, 0 }, { 0, 0 } } },
-        },
-        { pass_type = "triangle", style_id = "tri2",
-            style = { color = { 0, 0, 0, 0 }, triangle_corners = { { 0, 0 }, { 0, 0 }, { 0, 0 } } },
-        },
-    }, "game_area", nil, { 1, thickness or 2 })
-end
-
-local function circle_def(size)
-    return UIWidget.create_definition({
-        { pass_type = "circle", style_id = "gfx",
-            style = { color = { 0, 0, 0, 0 } },
-        }
-    }, "game_area", nil, { size or 4, size or 4 })
-end
-
-local function triangle_def()
-    return UIWidget.create_definition({
-        { pass_type = "triangle", style_id = "gfx",
-            style = { color = { 0, 0, 0, 0 }, triangle_corners = { { 0, 0 }, { 0, 0 }, { 0, 0 } } },
-        }
-    }, "game_area", nil, { 1, 1 })
-end
-
-local function rect_def(size)
-    return UIWidget.create_definition({
-        { pass_type = "texture", style_id = "gfx",
-            value = "content/ui/materials/backgrounds/default_square",
-            style = { hdr = true, color = { 0, 0, 0, 0 } },
-        }
-    }, "game_area", nil, { size or 4, size or 4 })
-end
 
 local widget_definitions = {
     bg = UIWidget.create_definition({
@@ -283,170 +246,31 @@ AuspexFrame.add_inner_border(widget_definitions, {
 
 local definitions = { scenegraph_definition = scenegraph, widget_definitions = widget_definitions }
 
+
 local AsteroidsView = class("AsteroidsView", "BaseView")
 
-local function set_color(dst, src, alpha)
-    dst[1] = alpha or src[1]
-    dst[2] = src[2]
-    dst[3] = src[3]
-    dst[4] = src[4]
-end
+local LIGHT_X, LIGHT_Y = -0.70710678, -0.70710678
+local SHIP_HULL = { 20, 0, -8, -6, -13, -14, -9, -3, -12, 0, -9, 3, -13, 14, -8, 6 }
 
-local function clear_line(w)
-    w.style.tri1.color[1] = 0
-    w.style.tri2.color[1] = 0
-end
-
-local function clear_circle(w)
-    w.style.gfx.color[1] = 0
-end
-
-local function clip_line(x1, y1, x2, y2)
-    local dx = x2 - x1
-    local dy = y2 - y1
-    local t0 = 0
-    local t1 = 1
-
-    for edge = 1, 4 do
-        local p = edge == 1 and -dx or edge == 2 and dx or edge == 3 and -dy or dy
-        local q = edge == 1 and x1 or edge == 2 and GAME_W - x1 or edge == 3 and y1 or GAME_H - y1
-        if p == 0 then
-            if q < 0 then return nil end
-        else
-            local r = q / p
-            if p < 0 then
-                if r > t1 then return nil end
-                if r > t0 then t0 = r end
-            else
-                if r < t0 then return nil end
-                if r < t1 then t1 = r end
-            end
-        end
-    end
-
-    return x1 + dx * t0, y1 + dy * t0, x1 + dx * t1, y1 + dy * t1
-end
-
-local function draw_line(w, x1, y1, x2, y2, thickness, color, alpha, z)
-    x1, y1, x2, y2 = clip_line(x1, y1, x2, y2)
-
-    if not x1 then
-        clear_line(w)
-        return
-    end
-
-    local dx = x2 - x1
-    local dy = y2 - y1
-    local len = math_sqrt(dx * dx + dy * dy)
-
-    if len <= 0.1 then
-        clear_line(w)
-        return
-    end
-
-    local half = thickness * 0.5
-    local nx = -dy / len * half
-    local ny = dx / len * half
-    local x1a = x1 + nx
-    local y1a = y1 + ny
-    local x1b = x1 - nx
-    local y1b = y1 - ny
-    local x2a = x2 + nx
-    local y2a = y2 + ny
-    local x2b = x2 - nx
-    local y2b = y2 - ny
-
-    w.offset[1] = 0
-    w.offset[2] = 0
-    w.offset[3] = z or 5
-
-    local tri1 = w.style.tri1.triangle_corners
-    tri1[1][1], tri1[1][2] = x1a, y1a
-    tri1[2][1], tri1[2][2] = x2a, y2a
-    tri1[3][1], tri1[3][2] = x2b, y2b
-
-    local tri2 = w.style.tri2.triangle_corners
-    tri2[1][1], tri2[1][2] = x1a, y1a
-    tri2[2][1], tri2[2][2] = x2b, y2b
-    tri2[3][1], tri2[3][2] = x1b, y1b
-
-    set_color(w.style.tri1.color, color, alpha)
-    set_color(w.style.tri2.color, color, alpha)
-end
-
-local function draw_circle(w, x, y, size, color, alpha, z)
-    w.content.size[1] = size
-    w.content.size[2] = size
-    w.offset[1] = x - size * 0.5
-    w.offset[2] = y - size * 0.5
-    w.offset[3] = z or 5
-    set_color(w.style.gfx.color, color, alpha)
-end
-
-local function point_rot(x, y, angle, scale)
-    local ca = math_cos(angle)
-    local sa = math_sin(angle)
-
-    return x * ca - y * sa, x * sa + y * ca
-end
-
-local function color_alpha(base, alpha)
-    if alpha < 0 then return 0 end
-    if alpha > base[1] then return base[1] end
-
-    return alpha
-end
+local rock_points = {}
+local inner_points = {}
 
 function AsteroidsView:init(settings, context)
     AsteroidsView.super.init(self, definitions, settings, context)
     self._game = context.game
     self._no_cursor = true
 
-    self._star_widgets = {}
-    for i = 1, STAR_WIDGETS do
-        self._star_widgets[i] = UIWidget.init("ast_star_" .. i, circle_def(3))
-    end
-
-    self._rock_line_widgets = {}
-    for i = 1, ROCK_LINE_WIDGETS do
-        self._rock_line_widgets[i] = UIWidget.init("ast_rock_line_" .. i, line_def(2))
-    end
-
-    self._ship_line_widgets = {}
-    for i = 1, SHIP_LINE_WIDGETS do
-        self._ship_line_widgets[i] = UIWidget.init("ast_ship_line_" .. i, line_def(3))
-    end
-
-    self._ship_fill_widget = UIWidget.init("ast_ship_fill", triangle_def())
-    self._ship_points = {}
-    for i = 1, #SHIP_POINTS do
-        self._ship_points[i] = { 0, 0 }
-    end
-
-    self._bullet_widgets = {}
-    for i = 1, BULLET_WIDGETS do
-        self._bullet_widgets[i] = UIWidget.init("ast_bullet_" .. i, line_def(4))
-    end
-
-    self._trail_widgets = {}
-    for i = 1, TRAIL_WIDGETS do
-        self._trail_widgets[i] = UIWidget.init("ast_trail_" .. i, line_def(2))
-    end
-
-    self._particle_widgets = {}
-    for i = 1, PARTICLE_WIDGETS do
-        self._particle_widgets[i] = UIWidget.init("ast_particle_" .. i, circle_def(4))
-    end
-
-    self._debris_widgets = {}
-    for i = 1, DEBRIS_WIDGETS do
-        self._debris_widgets[i] = UIWidget.init("ast_debris_" .. i, line_def(2))
-    end
-
-    self._grid_widgets = {}
-    for i = 1, 24 do
-        self._grid_widgets[i] = UIWidget.init("ast_grid_" .. i, line_def(1))
-    end
+    self._canvas = Gfx.Canvas.new(GAME_W, GAME_H, 9500)
+    self._particles = Gfx.Particles.new(360)
+    self._shaker = Gfx.Shaker.new()
+    self._time = 0
+    self._known_rocks = {}
+    self._rock_seen = {}
+    self._ship_was_alive = true
+    self._death_flash = 0
+    self._hull_points = {}
+    self._wave_flash = 0
+    self._prev_wave = nil
 end
 
 function AsteroidsView:dialogue_system() return nil end
@@ -457,30 +281,322 @@ function AsteroidsView:update(dt, t, input_service)
     return AsteroidsView.super.update(self, dt, t, input_service)
 end
 
+function AsteroidsView:_detect_events(ent)
+    local particles = self._particles
+    local known = self._known_rocks
+    local seen = self._rock_seen
+    local rocks = ent.rocks or {}
+
+    for rock in pairs(seen) do seen[rock] = nil end
+    for i = 1, #rocks do seen[rocks[i]] = true end
+
+    for rock, info in pairs(known) do
+        if not seen[rock] then
+            local size = info.size
+            local scale = size == 1 and 1.6 or size == 2 and 1.1 or 0.7
+            particles:shockwave(info.x, info.y, info.radius * 2.4, 0.45, COLORS.rock_hot, 3 * scale)
+            particles:flash(info.x, info.y, info.radius * 2, 0.28, COLORS.rock_hot)
+            particles:burst(info.x, info.y, math_floor(8 * scale), 20, 90, 0.6, 1.3, 7 * scale, COLORS.stone, "smoke", 1.2)
+            particles:burst(info.x, info.y, math_floor(10 * scale), 50, 230, 0.4, 1, 3.5 * scale, COLORS.stone, "shard", 1.4)
+            self._shaker:add(0.08 * scale)
+            known[rock] = nil
+        end
+    end
+
+    for i = 1, #rocks do
+        local rock = rocks[i]
+        local info = known[rock]
+        if not info then
+            info = {}
+            known[rock] = info
+        end
+        info.x, info.y, info.size, info.radius = rock.x, rock.y, rock.size, rock.radius
+    end
+
+    local ship = ent.ship
+    local alive = ship and ship.alive
+    if self._ship_was_alive and not alive and ship then
+        particles:shockwave(ship.x, ship.y, 130, 0.8, COLORS.flame, 5)
+        particles:flash(ship.x, ship.y, 120, 0.5, COLORS.flame_hot)
+        particles:burst(ship.x, ship.y, 30, 60, 380, 0.5, 1.3, 2.5, COLORS.flame, "spark", 1.6)
+        particles:burst(ship.x, ship.y, 12, 30, 150, 0.8, 1.6, 6, COLORS.hull, "shard", 1, 0)
+        self._death_flash = 1
+        self._shaker:add(0.9)
+    end
+    self._ship_was_alive = alive and true or false
+
+    local wave = self._game:wave()
+    if self._prev_wave and wave > self._prev_wave then self._wave_flash = 1 end
+    self._prev_wave = wave
+
+    if ship and alive and ent.thrusting then
+        local back = ship.angle + math_pi
+        local bx = ship.x + math_cos(back) * 13
+        local by = ship.y + math_sin(back) * 13
+        particles:emit(bx, by, math_cos(back) * 60 + ship.vx * 0.3, math_sin(back) * 60 + ship.vy * 0.3, 0.6, 5, COLORS.hull_dark, "smoke", 1.5)
+    end
+end
+
+function AsteroidsView:_draw_space(canvas, t, stars, sx, sy)
+    canvas:vgradient(0, 0, GAME_W, GAME_H, 0.2, COLORS.space_top, COLORS.space_low, 255, 255, 30)
+
+    canvas:glow(150 + math_sin(t * 0.03) * 30, 170, 210, 0.3, COLORS.nebula_a, 30, 7)
+    canvas:glow(470, 420 + math_cos(t * 0.025) * 25, 240, 0.31, COLORS.nebula_b, 26, 7)
+    canvas:glow(380, 140, 120, 0.32, COLORS.nebula_c, 18, 5)
+
+    -- Distant spiral galaxy.
+    local gx, gy = 470, 120
+    for arm = 0, 1 do
+        for k = 0, 16 do
+            local a = t * 0.02 + arm * math_pi + k * 0.32
+            local r = 4 + k * 3.4
+            canvas:circle(gx + math_cos(a) * r * 1.6, gy + math_sin(a) * r * 0.6, 3.5 - k * 0.12, 0.33, COLORS.star_mid, 34 - k * 1.6, 1, 0, 8)
+        end
+    end
+    canvas:glow(gx, gy, 16, 0.34, COLORS.star_near, 90, 4)
+
+    for i = 1, #stars do
+        local s = stars[i]
+        local twinkle = (math_sin(s.pulse * 2) + 1) * 0.5
+        local color = s.layer == 1 and COLORS.star_far or s.layer == 2 and COLORS.star_mid or COLORS.star_near
+        local size = math_min(2.4, s.size * 0.55)
+        local x = s.x + sx * s.layer * 0.3
+        local y = s.y + sy * s.layer * 0.3
+        canvas:rect(x - size * 0.5, y - size * 0.5, size, size, 0.5, color, color[1] * (0.55 + twinkle * 0.45), 1, 0.3)
+        if s.layer == 3 then
+            canvas:circle(x, y, size * 2.2, 0.49, color, 30 * twinkle, 1, 0, 8)
+            if twinkle > 0.75 then
+                local f = (twinkle - 0.75) * 24
+                canvas:rect(x - f, y - 0.4, f * 2, 0.8, 0.51, color, 120)
+                canvas:rect(x - 0.4, y - f, 0.8, f * 2, 0.51, color, 120)
+            end
+        end
+    end
+end
+
+function AsteroidsView:_draw_rock(canvas, rock, sx, sy, t)
+    local shape = rock.shape
+    local count = #shape
+    local ca, sa = math_cos(rock.angle), math_sin(rock.angle)
+    local cx, cy = rock.x + sx, rock.y + sy
+    local radius = rock.radius
+    local layer = 3 + rock.size * 0.05
+
+    for i = 1, count do
+        local p = shape[i]
+        rock_points[i * 2 - 1] = p.x * ca - p.y * sa
+        rock_points[i * 2] = p.x * sa + p.y * ca
+        inner_points[i * 2 - 1] = rock_points[i * 2 - 1] * 0.58
+        inner_points[i * 2] = rock_points[i * 2] * 0.58
+    end
+
+    canvas:poly(rock_points, count, layer - 0.1, COLORS.shadow, 110, 1, 0, cx + 5, cy + 6)
+
+    for i = 1, count do
+        local j = i == count and 1 or i + 1
+        local ax, ay = rock_points[i * 2 - 1], rock_points[i * 2]
+        local bx, by = rock_points[j * 2 - 1], rock_points[j * 2]
+        local ex, ey = bx - ax, by - ay
+        local len = math_sqrt(ex * ex + ey * ey)
+        local nx, ny = 0, 0
+        if len > 0 then nx, ny = ey / len, -ex / len end
+        local lit = math_max(0, nx * LIGHT_X + ny * LIGHT_Y)
+        local brightness = 0.28 + lit * 0.72
+
+        canvas:quad(cx + ax, cy + ay, cx + bx, cy + by, cx + inner_points[j * 2 - 1], cy + inner_points[j * 2], cx + inner_points[i * 2 - 1], cy + inner_points[i * 2], layer, COLORS.stone, 255, brightness)
+        canvas:line(cx + ax, cy + ay, cx + bx, cy + by, 1.6, layer + 0.02, lit > 0.25 and COLORS.rock_hot or COLORS.rock, 60 + lit * 190, 1, lit * 0.25)
+    end
+
+    canvas:poly(inner_points, count, layer + 0.01, COLORS.stone, 255, 0.62)
+    canvas:ellipse(cx - radius * 0.18, cy - radius * 0.2, radius * 0.34, radius * 0.28, layer + 0.015, COLORS.stone, 110, 0.95, 0.08, 12)
+
+    for k = 1, rock.size == 3 and 1 or 2 do
+        local p = shape[(k * 4) % count + 1]
+        local px = (p.x * ca - p.y * sa) * 0.36
+        local py = (p.x * sa + p.y * ca) * 0.36
+        local cr = radius * (k == 1 and 0.2 or 0.13)
+        canvas:circle(cx + px, cy + py, cr, layer + 0.02, COLORS.crater, 190, 1, 0, 10)
+        canvas:ring(cx + px, cy + py, cr, 1.2, layer + 0.025, COLORS.stone, 200, 8, math_pi * 0.25, math_pi * 1.25, 1.2)
+    end
+
+    if rock.size < 3 then
+        local scan = (math_sin(t * 2 + rock.glow) + 1) * 0.5
+        canvas:ring(cx, cy, radius * 1.12, 1, layer + 0.03, COLORS.rock, 25 + scan * 35, 16)
+    end
+end
+
+function AsteroidsView:_draw_target_lock(canvas, rocks, ship, t, sx, sy)
+    if not ship or not ship.alive then return end
+
+    local best, best_d = nil, 99999999
+    for i = 1, #rocks do
+        local r = rocks[i]
+        local dx, dy = r.x - ship.x, r.y - ship.y
+        local d = dx * dx + dy * dy
+        if d < best_d then best, best_d = r, d end
+    end
+    if not best then return end
+
+    local cx, cy = best.x + sx, best.y + sy
+    local s = best.radius * 1.35 + math_sin(t * 6) * 2
+    local arm = s * 0.35
+    local alpha = 170
+    for qx = -1, 1, 2 do
+        for qy = -1, 1, 2 do
+            local x, y = cx + qx * s, cy + qy * s
+            canvas:line(x, y, x - qx * arm, y, 1.4, 4.5, COLORS.lock, alpha)
+            canvas:line(x, y, x, y - qy * arm, 1.4, 4.5, COLORS.lock, alpha)
+        end
+    end
+    canvas:line(ship.x + sx, ship.y + sy, cx, cy, 1, 1, COLORS.lock, 22)
+end
+
+function AsteroidsView:_draw_bullets(canvas, bullets, sx, sy)
+    for i = 1, #bullets do
+        local b = bullets[i]
+        local k = b.max_life and b.max_life > 0 and b.life / b.max_life or 1
+        local tail_x = b.x - b.vx * 0.05
+        local tail_y = b.y - b.vy * 0.05
+        local dx, dy = b.x - (b.px or b.x), b.y - (b.py or b.y)
+        if dx * dx + dy * dy > 2500 then tail_x, tail_y = b.x, b.y end
+        canvas:glow_line(tail_x + sx, tail_y + sy, b.x + sx, b.y + sy, 2.2, 5.5, COLORS.bullet_glow, 255 * math_min(1, k * 2.5), 3)
+        canvas:glow(b.x + sx, b.y + sy, 9, 5.45, COLORS.bullet_glow, 120 * k, 3)
+        canvas:circle(b.x + sx, b.y + sy, 1.8, 5.6, COLORS.bullet, 255, 1, 0, 8)
+    end
+end
+
+function AsteroidsView:_draw_game_particles(canvas, particles, debris, sx, sy)
+    for i = 1, #particles do
+        local p = particles[i]
+        local k = p.max_life and p.max_life > 0 and p.life / p.max_life or 1
+        local kind = p.kind
+        local color = kind == "flame" and COLORS.particle_flame or kind == "ship" and COLORS.particle_ship or kind == "muzzle" and COLORS.bullet_glow or COLORS.particle_rock
+        local x, y = p.x + sx, p.y + sy
+        local size = (p.size or 3) * (0.35 + k * 0.65)
+
+        if kind == "flame" then
+            canvas:circle(x, y, size * 1.3, 5.1, color, 60 * k, 1, 0, 8)
+            canvas:circle(x, y, size * 0.5, 5.12, COLORS.flame_hot, 230 * k, 1, 0, 6)
+        elseif kind == "muzzle" then
+            canvas:glow(x, y, size * 1.6, 5.2, color, 200 * k, 3)
+        else
+            canvas:line(x - p.vx * 0.03, y - p.vy * 0.03, x, y, math_max(0.8, size * 0.45), 5.15, color, color[1] * k, 1, 0.3 * k)
+        end
+    end
+
+    for i = 1, #debris do
+        local d = debris[i]
+        local k = d.max_life and d.max_life > 0 and d.life / d.max_life or 1
+        local hx = math_cos(d.angle) * d.length * 0.5
+        local hy = math_sin(d.angle) * d.length * 0.5
+        canvas:line(d.x - hx + sx, d.y - hy + sy, d.x + hx + sx, d.y + hy + sy, 1.6, 5.05, COLORS.debris, COLORS.debris[1] * k)
+    end
+end
+
+function AsteroidsView:_draw_ship(canvas, ship, thrusting, braking, invulnerable, t, sx, sy)
+    if not ship or not ship.alive then return end
+
+    if invulnerable and math_floor(t * 12) % 2 == 0 then
+        -- Blink during spawn protection, but keep the shield visible.
+        canvas:ring(ship.x + sx, ship.y + sy, 24, 2, 5.9, COLORS.shield, 150, 24, t * 3, t * 3 + math_pi * 1.6)
+        return
+    end
+
+    local ca, sa = math_cos(ship.angle), math_sin(ship.angle)
+    local cx, cy = ship.x + sx, ship.y + sy
+    local hull = self._hull_points
+    local count = #SHIP_HULL / 2
+
+    for i = 1, count do
+        local px, py = SHIP_HULL[i * 2 - 1], SHIP_HULL[i * 2]
+        hull[i * 2 - 1] = px * ca - py * sa
+        hull[i * 2] = px * sa + py * ca
+    end
+
+    local function pt(px, py)
+        return cx + px * ca - py * sa, cy + px * sa + py * ca
+    end
+
+    if thrusting then
+        local flick = 0.8 + (math_sin(t * 47) + math_sin(t * 71)) * 0.12
+        local fx1, fy1 = pt(-10, -4)
+        local fx2, fy2 = pt(-10, 4)
+        local tipx, tipy = pt(-22 - 14 * flick, 0)
+        local core_x, core_y = pt(-16 - 8 * flick, 0)
+        local gx, gy = pt(-18, 0)
+        canvas:glow(gx, gy, 24, 5.6, COLORS.flame, 110, 4)
+        canvas:tri(fx1, fy1, fx2, fy2, tipx, tipy, 5.65, COLORS.flame, 220)
+        canvas:tri(fx1, fy1, fx2, fy2, core_x, core_y, 5.66, COLORS.flame_hot, 255)
+    end
+
+    if braking then
+        for side = -1, 1, 2 do
+            local bx, by = pt(6, side * 8)
+            local ex, ey = pt(14, side * 14)
+            canvas:glow_line(bx, by, ex, ey, 1.6, 5.65, COLORS.brake, 180, 2.5)
+        end
+    end
+
+    canvas:glow(cx, cy, 30, 5.55, COLORS.ship, 40, 4)
+    canvas:poly(hull, count, 5.7, COLORS.shadow, 120, 1, 0, cx + 4, cy + 5)
+
+    -- Split hull into lit and shaded halves around the spine.
+    local nose_x, nose_y = pt(20, 0)
+    local tail_x, tail_y = pt(-12, 0)
+    for i = 1, count do
+        local j = i == count and 1 or i + 1
+        local ax, ay = cx + hull[i * 2 - 1], cy + hull[i * 2]
+        local bx, by = cx + hull[j * 2 - 1], cy + hull[j * 2]
+        local ex, ey = bx - ax, by - ay
+        local len = math_sqrt(ex * ex + ey * ey)
+        local nx, ny = 0, 0
+        if len > 0 then nx, ny = ey / len, -ex / len end
+        local lit = math_max(0, nx * LIGHT_X + ny * LIGHT_Y)
+        canvas:tri(cx, cy, ax, ay, bx, by, 5.75, COLORS.hull, 255, 0.35 + lit * 0.65)
+        canvas:line(ax, ay, bx, by, 1.2, 5.8, COLORS.ship, 120 + lit * 135, 1, lit * 0.4)
+    end
+
+    canvas:line(nose_x, nose_y, tail_x, tail_y, 1, 5.82, COLORS.ship_core, 110)
+    local cpx, cpy = pt(5, 0)
+    canvas:ellipse(cpx, cpy, 4, 4, 5.85, COLORS.canopy, 255, 0.7, 0, 10)
+    local chx, chy = pt(6.5, -1.2)
+    canvas:circle(chx, chy, 1.6, 5.86, COLORS.white, 230, 1, 0, 6)
+
+    for side = -1, 1, 2 do
+        local lx, ly = pt(-12, side * 13)
+        local on = (math_sin(t * 6 + side) + 1) * 0.5
+        canvas:circle(lx, ly, 1.8, 5.87, side < 0 and COLORS.lock or COLORS.ship_core, 140 + on * 115, 1, 0, 6)
+        canvas:circle(lx, ly, 5, 5.86, side < 0 and COLORS.lock or COLORS.ship_core, on * 50, 1, 0, 8)
+    end
+
+    if invulnerable then
+        canvas:ring(cx, cy, 24, 2, 5.9, COLORS.shield, 150, 24, t * 3, t * 3 + math_pi * 1.6)
+        canvas:glow(cx, cy, 28, 5.52, COLORS.shield, 50, 3)
+    end
+end
+
 function AsteroidsView:_draw_widgets(dt, t, input_service, ui_renderer, render_settings)
-    if self._game then
+    local game = self._game
+
+    if game then
         local score_w = self._widgets_by_name.score_text
-        if score_w then score_w.content.text = string.format("Score: %d", self._game:score()) end
+        if score_w then score_w.content.text = string.format("Score: %d", game:score()) end
 
         local wave_w = self._widgets_by_name.wave_text
-        if wave_w then wave_w.content.text = string.format("Wave: %d", self._game:wave()) end
+        if wave_w then wave_w.content.text = string.format("Wave: %d", game:wave()) end
 
         local lives_w = self._widgets_by_name.lives_text
-        if lives_w then lives_w.content.text = string.format("Hull: %d", self._game:lives()) end
+        if lives_w then lives_w.content.text = string.format("Hull: %d", game:lives()) end
 
         local message_w = self._widgets_by_name.message_text
         if message_w then
-            if self._game:is_game_over() then
+            if game:is_game_over() then
                 message_w.content.text = "GAME OVER"
                 message_w.style.text.text_color = COLORS.warning
             else
-                local text = self._game:level_text()
+                local text = game:level_text()
                 message_w.content.text = text
-                if text ~= "" then
-                    message_w.style.text.text_color = COLORS.message
-                else
-                    message_w.style.text.text_color = COLORS.hidden
-                end
+                message_w.style.text.text_color = text ~= "" and COLORS.message or COLORS.hidden
             end
         end
     end
@@ -489,311 +605,62 @@ function AsteroidsView:_draw_widgets(dt, t, input_service, ui_renderer, render_s
     if hsw then hsw.content.text = mod:localize("asteroids_highscore") .. " " .. (mod:get("asteroids_highscore") or 0) end
 
     local hot_noise = self._widgets_by_name.scanner_noise_hot
-    if hot_noise and self._game then
-        local a = 20 + math_floor((math_sin(self._game:time() * 2.7) + 1) * 12) + math_floor(self._game:shake() * 80)
+    if hot_noise and game then
+        local a = 20 + math_floor((math_sin(game:time() * 2.7) + 1) * 12) + math_floor(game:shake() * 80)
         hot_noise.style.noise.color[1] = math_min(150, a)
     end
 
     AsteroidsView.super._draw_widgets(self, dt, t, input_service, ui_renderer, render_settings)
 
-    if not self._game then return end
+    if not game then return end
 
-    self:_draw_dynamic(ui_renderer)
-end
+    dt = math_min(dt or 0.016, 0.05)
+    self._time = self._time + dt
 
-function AsteroidsView:_draw_dynamic(ui_renderer)
-    local ent = self._game:entities()
-    local shake = self._game:shake()
-    local time = self._game:time()
-    local sx = math_sin(time * 71) * shake * 6
-    local sy = math_sin(time * 93 + 1.2) * shake * 6
+    local ent = game:entities()
+    self:_detect_events(ent)
+    self._particles:update(dt)
+    self._shaker:update(dt, 7)
+    self._death_flash = math_max(0, self._death_flash - dt * 1.5)
+    self._wave_flash = math_max(0, self._wave_flash - dt * 0.8)
 
-    self:_draw_grid(ui_renderer, sx, sy)
-    self:_draw_stars(ui_renderer, ent.stars, sx, sy)
-    self:_draw_rocks(ui_renderer, ent.rocks, sx, sy)
-    self:_draw_bullets(ui_renderer, ent.bullets, sx, sy)
-    self:_draw_debris(ui_renderer, ent.debris, sx, sy)
-    self:_draw_particles(ui_renderer, ent.particles, sx, sy)
-    self:_draw_ship(ui_renderer, ent.ship, ent.thrusting, ent.braking, ent.invulnerable, sx, sy)
-end
+    local canvas = self._canvas
+    if not canvas:begin(ui_renderer, self:_scenegraph_world_position("game_area")) then return end
 
-function AsteroidsView:_draw_grid(ui_renderer, sx, sy)
-    local idx = 1
-    local t = self._game:time()
-    local drift = (t * 2) % 75
+    local time = self._time
+    local shake = game:shake()
+    local sx = math_sin(time * 71) * shake * 6 + self._shaker.x
+    local sy = math_sin(time * 93 + 1.2) * shake * 6 + self._shaker.y
+    local rocks = ent.rocks or {}
 
-    for x = -75, GAME_W + 75, 75 do
-        local w = self._grid_widgets[idx]
-        idx = idx + 1
-        draw_line(w, x + drift + sx, sy, x + drift + sx, GAME_H + sy, 1, COLORS.grid_dim, 18, 1)
-        UIWidget.draw(w, ui_renderer)
-    end
-
-    for y = -75, GAME_H + 75, 75 do
-        local w = self._grid_widgets[idx]
-        idx = idx + 1
-        draw_line(w, sx, y + drift + sy, GAME_W + sx, y + drift + sy, 1, COLORS.grid_dim, 14, 1)
-        UIWidget.draw(w, ui_renderer)
-    end
-
-    for i = 23, 24 do
-        local y = i == 23 and 73 or 527
-        local w = self._grid_widgets[i]
-        draw_line(w, 22, y, 578, y, 1, COLORS.grid, 65, 3)
-        UIWidget.draw(w, ui_renderer)
-    end
-end
-
-function AsteroidsView:_draw_stars(ui_renderer, stars, sx, sy)
-    for i = 1, STAR_WIDGETS do
-        local star = stars[i]
-        local w = self._star_widgets[i]
-
-        if star then
-            local color = star.layer == 1 and COLORS.star_far or star.layer == 2 and COLORS.star_mid or COLORS.star_near
-            local pulse = (math_sin(star.pulse) + 1) * 0.5
-            local size = math_max(1, star.size * 0.45)
-            local alpha = color_alpha(color, color[1] * (0.55 + pulse * 0.2))
-            local x = star.x + sx * star.layer * 0.2
-            local y = star.y + sy * star.layer * 0.2
-
-            if star.layer == 3 then
-                draw_circle(w, x, y, size * 3, color, 14 + pulse * 6, 2)
-                UIWidget.draw(w, ui_renderer)
-            end
-            draw_circle(w, x, y, size, color, alpha, 2 + star.layer)
-            UIWidget.draw(w, ui_renderer)
-        else
-            clear_circle(w)
-        end
-    end
-end
-
-function AsteroidsView:_draw_rocks(ui_renderer, rocks, sx, sy)
-    local widget_index = 1
-
+    -- Submission order is priority order when the budget is tight; layers still sort the result.
+    self:_draw_space(canvas, time, ent.stars or {}, sx, sy)
+    self:_draw_ship(canvas, ent.ship, ent.thrusting, ent.braking, ent.invulnerable, time, sx, sy)
+    self:_draw_bullets(canvas, ent.bullets or {}, sx, sy)
+    self:_draw_target_lock(canvas, rocks, ent.ship, time, sx, sy)
     for i = 1, #rocks do
-        if widget_index > ROCK_LINE_WIDGETS then break end
-        local rock = rocks[i]
-        local shape = rock.shape
-        local points = #shape
-        local thickness = rock.size == 1 and 2.0 or rock.size == 2 and 1.7 or 1.4
-        local cx, cy = rock.x + sx, rock.y + sy
+        self:_draw_rock(canvas, rocks[i], sx, sy, time)
+    end
+    self:_draw_game_particles(canvas, ent.particles or {}, ent.debris or {}, sx, sy)
+    canvas:set_shake(sx, sy)
+    self._particles:draw(canvas, 6)
+    canvas:set_shake(0, 0)
 
-        for p = 1, points do
-            if widget_index > ROCK_LINE_WIDGETS then break end
-
-            local a = shape[p]
-            local b = shape[p == points and 1 or p + 1]
-            local ax, ay = point_rot(a.x, a.y, rock.angle)
-            local bx, by = point_rot(b.x, b.y, rock.angle)
-            local w = self._rock_line_widgets[widget_index]
-
-            -- Inset strata follow the actual silhouette; a fixed light direction shades the rim.
-            local light = math_max(0, math_min(1, 0.5 - (ax + bx + ay + by) / (rock.radius * 5)))
-            draw_line(w, cx + ax * 0.65, cy + ay * 0.65, cx + bx * 0.65, cy + by * 0.65, rock.radius * 0.3, COLORS.rock_shadow, 100 + light * 50, 6)
-            UIWidget.draw(w, ui_renderer)
-            draw_line(w, cx + ax * 0.53, cy + ay * 0.53, cx + bx * 0.53, cy + by * 0.53, 1, COLORS.rock, 30 + light * 30, 7)
-            UIWidget.draw(w, ui_renderer)
-            if p % 3 == 1 then
-                draw_line(w, cx + ax * 0.53, cy + ay * 0.53, cx + ax, cy + ay, 1, COLORS.rock, 50, 7)
-                UIWidget.draw(w, ui_renderer)
-            end
-            draw_line(w, cx + ax, cy + ay, cx + bx, cy + by, thickness + 3, COLORS.rock, 24, 7)
-            UIWidget.draw(w, ui_renderer)
-            draw_line(w, cx + ax, cy + ay, cx + bx, cy + by, thickness, COLORS.rock, 125 + light * 110, 8)
-            UIWidget.draw(w, ui_renderer)
-            draw_line(w, cx + ax, cy + ay, cx + bx, cy + by, 0.8, COLORS.rock_hot, light * 165, 9)
-            UIWidget.draw(w, ui_renderer)
-            widget_index = widget_index + 1
-        end
+    if self._death_flash > 0 then
+        canvas:rect(0, 0, GAME_W, GAME_H, 7, COLORS.warning, self._death_flash * 120)
+    end
+    if self._wave_flash > 0 then
+        canvas:sweep(0, 0, GAME_W, GAME_H, (1 - self._wave_flash) * 2, 2, 7.1, COLORS.rock_hot, 150 * self._wave_flash, 160)
     end
 
-    for i = widget_index, ROCK_LINE_WIDGETS do
-        clear_line(self._rock_line_widgets[i])
-    end
+    canvas:crt(0, 0, GAME_W, GAME_H, time, 8, { tint = COLORS.rock, vignette_depth = 90, vignette_alpha = 170 })
+    canvas:finish()
 end
 
-function AsteroidsView:_draw_bullets(ui_renderer, bullets, sx, sy)
-    for i = 1, BULLET_WIDGETS do
-        local b = bullets[i]
-        local w = self._bullet_widgets[i]
-
-        if b then
-            local dx = b.x - b.px
-            local dy = b.y - b.py
-            local trail = math_sqrt(dx * dx + dy * dy)
-
-            if trail > 80 then
-                dx = 0
-                dy = 0
-                trail = 8
-            elseif trail < 8 then
-                trail = 8
-            end
-
-            local alpha = 110 + math_floor((b.life / b.max_life) * 145)
-            draw_line(w, b.x - dx * 0.8 + sx, b.y - dy * 0.8 + sy, b.x + sx, b.y + sy, 2, COLORS.bullet, alpha, 14)
-            UIWidget.draw(w, ui_renderer)
-        else
-            clear_line(w)
-        end
-    end
-
-    for i = 1, TRAIL_WIDGETS do
-        local b = bullets[i]
-        local w = self._trail_widgets[i]
-
-        if b then
-            local dx = b.x - b.px
-            local dy = b.y - b.py
-
-            if dx * dx + dy * dy <= 6400 then
-                draw_line(w, b.px + sx, b.py + sy, b.x + sx, b.y + sy, 7, COLORS.bullet_glow, 48, 13)
-                UIWidget.draw(w, ui_renderer)
-            else
-                clear_line(w)
-            end
-        else
-            clear_line(w)
-        end
-    end
+function AsteroidsView:destroy()
+    self._canvas = nil
+    self._particles = nil
+    AsteroidsView.super.destroy(self)
 end
-
-function AsteroidsView:_draw_particles(ui_renderer, particles, sx, sy)
-    for i = 1, PARTICLE_WIDGETS do
-        local p = particles[i]
-        local w = self._particle_widgets[i]
-
-        if p then
-            local f = math_max(0, p.life / p.max_life)
-            local color = p.kind == "flame" and COLORS.particle_flame or p.kind == "ship" and COLORS.particle_ship or p.kind == "muzzle" and COLORS.bullet or COLORS.particle_rock
-            local size = p.size * (0.35 + f)
-            local alpha = color_alpha(color, color[1] * f)
-
-            if p.kind ~= "rock" then
-                draw_circle(w, p.x + sx, p.y + sy, size * 1.8, color, alpha * 0.12, 6)
-                UIWidget.draw(w, ui_renderer)
-            end
-            draw_circle(w, p.x + sx, p.y + sy, size * 0.7, color, alpha, p.kind == "flame" and 7 or 11)
-            UIWidget.draw(w, ui_renderer)
-        else
-            clear_circle(w)
-        end
-    end
-end
-
-function AsteroidsView:_draw_debris(ui_renderer, debris, sx, sy)
-    for i = 1, DEBRIS_WIDGETS do
-        local d = debris[i]
-        local w = self._debris_widgets[i]
-
-        if d then
-            local f = math_max(0, d.life / d.max_life)
-            local dx = math_cos(d.angle) * d.length * 0.5
-            local dy = math_sin(d.angle) * d.length * 0.5
-
-            draw_line(w, d.x - dx + sx, d.y - dy + sy, d.x + dx + sx, d.y + dy + sy, 2, COLORS.debris, color_alpha(COLORS.debris, COLORS.debris[1] * f), 10)
-            UIWidget.draw(w, ui_renderer)
-        else
-            clear_line(w)
-        end
-    end
-end
-
-function AsteroidsView:_draw_ship(ui_renderer, ship, thrusting, braking, invulnerable, sx, sy)
-    for i = 1, SHIP_LINE_WIDGETS do
-        clear_line(self._ship_line_widgets[i])
-    end
-
-    self._ship_fill_widget.style.gfx.color[1] = 0
-
-    if not ship or not ship.alive then return end
-
-    local blink = invulnerable and math_floor(self._game:time() * 12) % 2 == 0
-    if invulnerable and not blink then return end
-
-    local color = invulnerable and COLORS.ship_invuln or COLORS.ship
-    local transformed = self._ship_points
-
-    for i = 1, #SHIP_POINTS do
-        local px, py = point_rot(SHIP_POINTS[i][1], SHIP_POINTS[i][2], ship.angle)
-        transformed[i][1], transformed[i][2] = ship.x + px + sx, ship.y + py + sy
-    end
-
-    local fill = self._ship_fill_widget
-    fill.offset[1] = 0
-    fill.offset[2] = 0
-    fill.offset[3] = 15
-    fill.style.gfx.triangle_corners[1][1] = transformed[1][1]
-    fill.style.gfx.triangle_corners[1][2] = transformed[1][2]
-    fill.style.gfx.triangle_corners[2][1] = transformed[2][1]
-    fill.style.gfx.triangle_corners[2][2] = transformed[2][2]
-    fill.style.gfx.triangle_corners[3][1] = transformed[4][1]
-    fill.style.gfx.triangle_corners[3][2] = transformed[4][2]
-    set_color(fill.style.gfx.color, color, 85)
-    UIWidget.draw(fill, ui_renderer)
-    fill.style.gfx.triangle_corners[2][1] = transformed[4][1]
-    fill.style.gfx.triangle_corners[2][2] = transformed[4][2]
-    fill.style.gfx.triangle_corners[3][1] = transformed[6][1]
-    fill.style.gfx.triangle_corners[3][2] = transformed[6][2]
-    set_color(fill.style.gfx.color, color, 35)
-    UIWidget.draw(fill, ui_renderer)
-
-    for i = 1, #SHIP_LINES do
-        local info = SHIP_LINES[i]
-        local a = transformed[info[1]]
-        local b = transformed[info[2]]
-        local w = self._ship_line_widgets[i]
-
-        draw_line(w, a[1], a[2], b[1], b[2], info[4] + 4, color, 28, 14)
-        UIWidget.draw(w, ui_renderer)
-        draw_line(w, a[1], a[2], b[1], b[2], info[4], i == 7 and COLORS.ship_core or color, info[3], 16)
-        UIWidget.draw(w, ui_renderer)
-    end
-
-    local nose_x, nose_y = point_rot(11, 0, ship.angle)
-    local cockpit_x, cockpit_y = point_rot(-2, 0, ship.angle)
-    local cx, cy = ship.x + sx, ship.y + sy
-    draw_line(self._ship_line_widgets[10], cx + nose_x, cy + nose_y, cx + cockpit_x, cy + cockpit_y, 4, COLORS.rock_shadow, 255, 16)
-    UIWidget.draw(self._ship_line_widgets[10], ui_renderer)
-    draw_line(self._ship_line_widgets[11], cx + nose_x, cy + nose_y, cx + cockpit_x, cy + cockpit_y, 1.3, COLORS.ship_core, 245, 17)
-    UIWidget.draw(self._ship_line_widgets[11], ui_renderer)
-
-    if thrusting then
-        local back_x, back_y = point_rot(-15, 0, ship.angle)
-        local l_x, l_y = point_rot(-7, -5, ship.angle)
-        local r_x, r_y = point_rot(-7, 5, ship.angle)
-        local flame = 23 + math_sin(self._game:time() * 23) * 4 + math_sin(self._game:time() * 37) * 2
-        local f_x, f_y = point_rot(-15 - flame, 0, ship.angle)
-
-        fill.offset[3] = 14
-        local corners = fill.style.gfx.triangle_corners
-        corners[1][1], corners[1][2] = cx + l_x, cy + l_y
-        corners[2][1], corners[2][2] = cx + f_x, cy + f_y
-        corners[3][1], corners[3][2] = cx + r_x, cy + r_y
-        set_color(fill.style.gfx.color, COLORS.flame, 95)
-        UIWidget.draw(fill, ui_renderer)
-        draw_line(self._ship_line_widgets[8], ship.x + l_x + sx, ship.y + l_y + sy, ship.x + f_x + sx, ship.y + f_y + sy, 1.5, COLORS.flame, 180, 15)
-        UIWidget.draw(self._ship_line_widgets[8], ui_renderer)
-        draw_line(self._ship_line_widgets[9], ship.x + r_x + sx, ship.y + r_y + sy, ship.x + f_x + sx, ship.y + f_y + sy, 1.5, COLORS.flame, 180, 15)
-        UIWidget.draw(self._ship_line_widgets[9], ui_renderer)
-        local hot_x, hot_y = point_rot(-15 - flame * 0.6, 0, ship.angle)
-        draw_line(self._ship_line_widgets[12], cx + back_x, cy + back_y, cx + hot_x, cy + hot_y, 3, COLORS.flame_hot, 230, 15)
-        UIWidget.draw(self._ship_line_widgets[12], ui_renderer)
-    elseif braking then
-        local f1x, f1y = point_rot(18, -5, ship.angle)
-        local f2x, f2y = point_rot(32, -5, ship.angle)
-        local f3x, f3y = point_rot(18, 5, ship.angle)
-        local f4x, f4y = point_rot(32, 5, ship.angle)
-
-        draw_line(self._ship_line_widgets[8], ship.x + f1x + sx, ship.y + f1y + sy, ship.x + f2x + sx, ship.y + f2y + sy, 2.5, COLORS.brake, 170, 15)
-        UIWidget.draw(self._ship_line_widgets[8], ui_renderer)
-        draw_line(self._ship_line_widgets[9], ship.x + f3x + sx, ship.y + f3y + sy, ship.x + f4x + sx, ship.y + f4y + sy, 2.5, COLORS.brake, 170, 15)
-        UIWidget.draw(self._ship_line_widgets[9], ui_renderer)
-    end
-end
-
-function AsteroidsView:destroy() AsteroidsView.super.destroy(self) end
 
 return AsteroidsView

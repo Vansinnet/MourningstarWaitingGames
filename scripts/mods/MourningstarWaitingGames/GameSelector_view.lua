@@ -2,6 +2,14 @@ local mod = get_mod("MourningstarWaitingGames")
 local UIWidget = require("scripts/managers/ui/ui_widget")
 local UIWorkspaceSettings = require("scripts/settings/ui/ui_workspace_settings")
 local AuspexFrame = mod:io_dofile("MourningstarWaitingGames/scripts/mods/MourningstarWaitingGames/MourningstarWaitingGames_auspex_frame")
+local Gfx = mod:io_dofile("MourningstarWaitingGames/scripts/mods/MourningstarWaitingGames/MourningstarWaitingGames_canvas")
+
+local math_cos = math.cos
+local math_floor = math.floor
+local math_max = math.max
+local math_min = math.min
+local math_pi = math.pi
+local math_sin = math.sin
 
 local RENDER_SIZE = 600
 local CARD_WIDTH = 128
@@ -35,6 +43,9 @@ local COLORS = {
     frame_dim = { 100, 25, 105, 80 },
     card = { 220, 2, 14, 12 },
     card_selected = { 245, 5, 30, 25 },
+    grid = { 255, 30, 170, 130 },
+    white = { 255, 255, 255, 255 },
+    shadow = { 255, 0, 0, 0 },
 }
 
 local scenegraph = {
@@ -256,6 +267,16 @@ function GameSelectorView:init(settings, context)
     self._state = context.state
     self._no_cursor = true
     self._time = 0
+    self._canvas = Gfx.Canvas.new(RENDER_SIZE, RENDER_SIZE, 4000)
+    self._particles = Gfx.Particles.new(200)
+    self._cursor_x = nil
+    self._cursor_y = nil
+    self._last_selected = nil
+    self._select_flash = 0
+    self._motes = {}
+    for i = 1, 40 do
+        self._motes[i] = { x = (i * 131.7) % RENDER_SIZE, y = (i * 71.3) % RENDER_SIZE, speed = 6 + (i * 17) % 18, phase = i * 1.9 }
+    end
 end
 
 function GameSelectorView:dialogue_system() return nil end
@@ -264,6 +285,103 @@ function GameSelectorView:is_using_input() return false end
 function GameSelectorView:update(dt, t, input_service)
     self._time = self._time + (dt or 0)
     return GameSelectorView.super.update(self, dt, t, input_service)
+end
+
+function GameSelectorView:_card_rect(base, index)
+    local p = self:_scenegraph_world_position("card_" .. index)
+    return p[1] - base[1], p[2] - base[2], CARD_WIDTH, CARD_HEIGHT
+end
+
+function GameSelectorView:_draw_background(canvas, t)
+    local cx, cy = RENDER_SIZE * 0.5, RENDER_SIZE * 0.5 + 8
+
+    for ring = 1, 5 do
+        local r = ring * 58 + (t * 12) % 58
+        canvas:ring(cx, cy, r, 1, 0.6, COLORS.grid, 22 * (1 - r / 360), 48)
+    end
+    canvas:radar(cx, cy, 290, t * 0.7, 0.62, COLORS.grid, 34, 1.2, 16)
+
+    for gx = 20, RENDER_SIZE - 20, 30 do
+        for gy = 50, RENDER_SIZE - 40, 30 do
+            local wave = (math_sin(t * 1.5 - (gx + gy) * 0.012) + 1) * 0.5
+            canvas:rect(gx - 0.75, gy - 0.75, 1.5, 1.5, 0.64, COLORS.grid, 18 + wave * 40)
+        end
+    end
+
+    for i = 1, #self._motes do
+        local m = self._motes[i]
+        local y = (m.y - t * m.speed) % RENDER_SIZE
+        local tw = (math_sin(t * 2 + m.phase) + 1) * 0.5
+        canvas:rect(m.x, y, 1.6, 1.6, 0.66, COLORS.grid, 40 + tw * 80, 1, 0.3)
+    end
+end
+
+function GameSelectorView:_draw_cards(canvas, base, t, selected_index)
+    for i = 1, #GAMES do
+        local x, y, w, h = self:_card_rect(base, i)
+        local color = GAMES[i].color
+        local selected = i == selected_index
+
+        canvas:rect(x + 5, y + 7, w, h, 15, COLORS.shadow, 150)
+
+        if selected then
+            local pulse = (math_sin(t * 4) + 1) * 0.5
+            canvas:soft_rect(x, y, w, h, 18 + pulse * 6, 15.1, color, 70 + pulse * 30, 6)
+        end
+
+        -- Icon halo sits between the card face and its pixel icon.
+        local glow = selected and 110 + math_sin(t * 5) * 30 or 30
+        canvas:glow(x + 64, y + 31, selected and 34 or 24, 16.3, color, glow, 4)
+
+        if selected then
+            canvas:sweep(x + 2, y + 2, w - 4, h - 4, t, 1.6, 20.4, color, 50, 40)
+            for k = 0, 2 do
+                local bar = (t * 1.8 + k / 3) % 1
+                canvas:rect(x + 8, y + 12 + bar * 32, w - 16, 1, 16.4, color, 70 * (1 - bar))
+            end
+        end
+    end
+end
+
+function GameSelectorView:_draw_cursor(canvas, base, t, selected_index)
+    local x, y, w, h = self:_card_rect(base, selected_index)
+    local color = GAMES[selected_index].color
+
+    if not self._cursor_x then
+        self._cursor_x, self._cursor_y = x, y
+    end
+
+    self._cursor_x = self._cursor_x + (x - self._cursor_x) * 0.25
+    self._cursor_y = self._cursor_y + (y - self._cursor_y) * 0.25
+
+    local cx, cy = self._cursor_x, self._cursor_y
+    local pad = 7 + math_sin(t * 5) * 2 + self._select_flash * 10
+    local arm = 20
+
+    for qx = 0, 1 do
+        for qy = 0, 1 do
+            local px = cx + qx * w + (qx == 0 and -pad or pad)
+            local py = cy + qy * h + (qy == 0 and -pad or pad)
+            local dx = qx == 0 and 1 or -1
+            local dy = qy == 0 and 1 or -1
+            canvas:glow_line(px, py, px + dx * arm, py, 2, 21, color, 240, 2.5)
+            canvas:glow_line(px, py, px, py + dy * arm, 2, 21, color, 240, 2.5)
+            canvas:rect(px - 2, py - 2, 4, 4, 21.1, COLORS.white, 230)
+        end
+    end
+
+    -- Travelling edge light around the selected card.
+    local perimeter = 2 * (w + h)
+    for k = 0, 1 do
+        local d = (t * 260 + k * perimeter * 0.5) % perimeter
+        local px, py
+        if d < w then px, py = cx + d, cy
+        elseif d < w + h then px, py = cx + w, cy + d - w
+        elseif d < 2 * w + h then px, py = cx + w - (d - w - h), cy + h
+        else px, py = cx, cy + h - (d - 2 * w - h) end
+        canvas:glow(px, py, 12, 20.6, color, 150, 3)
+        canvas:rect(px - 1.5, py - 1.5, 3, 3, 20.7, COLORS.white, 255)
+    end
 end
 
 function GameSelectorView:_draw_widgets(dt, t, input_service, ui_renderer, render_settings)
@@ -275,7 +393,7 @@ function GameSelectorView:_draw_widgets(dt, t, input_service, ui_renderer, rende
 
         if widget then
             local selected = i == selected_index
-            local pulse = selected and 205 + math.floor((math.sin(self._time * 4) + 1) * 25) or 70
+            local pulse = selected and 205 + math_floor((math_sin(self._time * 4) + 1) * 25) or 70
 
             widget.content.title = mod:localize(game.label)
             widget.content.description = mod:localize(game.description)
@@ -300,9 +418,37 @@ function GameSelectorView:_draw_widgets(dt, t, input_service, ui_renderer, rende
     if noise then noise.style.noise.angle = self._time * 0.025 end
 
     GameSelectorView.super._draw_widgets(self, dt, t, input_service, ui_renderer, render_settings)
+
+    if not selected_game then return end
+
+    local frame_dt = math_min(dt or 0.016, 0.05)
+    local base = self:_scenegraph_world_position("scanner_base")
+
+    if self._last_selected and self._last_selected ~= selected_index then
+        local x, y, w, h = self:_card_rect(base, selected_index)
+        self._particles:burst(x + w * 0.5, y + h * 0.5, 24, 60, 240, 0.3, 0.7, 1.6, selected_game.color, "spark", 3)
+        self._particles:shockwave(x + w * 0.5, y + h * 0.5, 90, 0.4, selected_game.color, 2)
+        self._select_flash = 1
+    end
+    self._last_selected = selected_index
+    self._particles:update(frame_dt)
+    self._select_flash = math_max(0, self._select_flash - frame_dt * 3)
+
+    local canvas = self._canvas
+    if not canvas:begin(ui_renderer, base) then return end
+
+    local time = self._time
+    self:_draw_background(canvas, time)
+    self:_draw_cards(canvas, base, time, selected_index)
+    self:_draw_cursor(canvas, base, time, selected_index)
+    self._particles:draw(canvas, 21.5)
+    canvas:crt(16, 48, RENDER_SIZE - 32, RENDER_SIZE - 64, time, 19.8, { tint = COLORS.grid, scan_alpha = 16, vignette_depth = 60, vignette_alpha = 110, noise_count = 10, flicker = false })
+    canvas:finish()
 end
 
 function GameSelectorView:destroy()
+    self._canvas = nil
+    self._particles = nil
     GameSelectorView.super.destroy(self)
 end
 

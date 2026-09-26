@@ -81,6 +81,8 @@ function InvadersGame:is_game_over() return self._state == "dead" end
 function InvadersGame:is_playing() return self._state == "playing" end
 function InvadersGame:shake() return self._shake end
 function InvadersGame:time() return self._time end
+function InvadersGame:mystery_hit_ticks() return self._mystery_hit_ticks or 0 end
+function InvadersGame:mystery_x() return self._mystery_x end
 
 -- The host submits input before update(dt), using the same frame dt.
 -- Held movement spans transitions; only fire edges are invalidated by an epoch.

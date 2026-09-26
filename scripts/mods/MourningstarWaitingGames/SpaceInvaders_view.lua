@@ -2,20 +2,20 @@ local mod = get_mod("MourningstarWaitingGames")
 local UIWidget = require("scripts/managers/ui/ui_widget")
 local UIWorkspaceSettings = require("scripts/settings/ui/ui_workspace_settings")
 local AuspexFrame = mod:io_dofile("MourningstarWaitingGames/scripts/mods/MourningstarWaitingGames/MourningstarWaitingGames_auspex_frame")
+local Gfx = mod:io_dofile("MourningstarWaitingGames/scripts/mods/MourningstarWaitingGames/MourningstarWaitingGames_canvas")
 
+local math_abs = math.abs
+local math_cos = math.cos
 local math_floor = math.floor
+local math_max = math.max
+local math_min = math.min
+local math_pi = math.pi
 local math_sin = math.sin
 
 local RENDER_SIZE = 600
 local GAME_W = 600
 local GAME_H = 600
-local ENEMY_WIDGETS = 55
-local ENEMY_PIXELS = 1024
-local SHIELD_WIDGETS = 640
-local PLAYER_PIXELS = 36
-local MYSTERY_PIXELS = 34
-local BULLET_WIDGETS = 18
-local STAR_WIDGETS = 55
+local STAR_COUNT = 120
 
 local COLORS = {
     bg = { 245, 0, 5, 1 },
@@ -41,57 +41,91 @@ local COLORS = {
     armor = { 255, 12, 95, 55 },
     message = { 210, 100, 255, 175 },
     hidden = { 0, 0, 0, 0 },
+    space_top = { 255, 6, 3, 18 },
+    space_low = { 255, 1, 12, 12 },
+    nebula_a = { 255, 120, 40, 190 },
+    nebula_b = { 255, 0, 150, 130 },
+    planet = { 255, 60, 120, 110 },
+    planet_dark = { 255, 5, 14, 18 },
+    atmosphere = { 255, 90, 255, 200 },
+    ground = { 255, 0, 255, 140 },
+    hull = { 255, 30, 170, 110 },
+    hull_light = { 255, 180, 255, 210 },
+    cockpit = { 255, 120, 230, 255 },
+    flame = { 255, 255, 170, 60 },
+    flame_core = { 255, 255, 250, 210 },
+    eye = { 255, 255, 60, 60 },
+    beam = { 255, 255, 220, 120 },
+    white = { 255, 255, 255, 255 },
+    shadow = { 255, 0, 0, 0 },
 }
 
-local INVADER_MASKS = {
+local INVADER_FRAMES = {
     {
-        "00111100",
-        "01111110",
-        "11011011",
-        "11111111",
-        "00100100",
-        "01011010",
-        "10100101",
+        {
+            "00111100",
+            "01111110",
+            "11011011",
+            "11111111",
+            "00100100",
+            "01011010",
+            "10100101",
+        },
+        {
+            "00111100",
+            "01111110",
+            "11011011",
+            "11111111",
+            "01011010",
+            "10000001",
+            "01000010",
+        },
     },
     {
-        "00100100",
-        "01111110",
-        "11011011",
-        "11111111",
-        "11111111",
-        "01000010",
-        "10000001",
+        {
+            "00100100",
+            "01111110",
+            "11011011",
+            "11111111",
+            "11111111",
+            "01000010",
+            "10000001",
+        },
+        {
+            "00100100",
+            "10111101",
+            "11011011",
+            "11111111",
+            "01111110",
+            "00100100",
+            "01000010",
+        },
     },
     {
-        "00011000",
-        "00111100",
-        "01111110",
-        "11011011",
-        "11111111",
-        "00100100",
-        "01000010",
+        {
+            "00011000",
+            "00111100",
+            "01111110",
+            "11011011",
+            "11111111",
+            "00100100",
+            "01000010",
+        },
+        {
+            "00011000",
+            "00111100",
+            "01111110",
+            "11011011",
+            "11111111",
+            "01011010",
+            "10100101",
+        },
     },
-}
-
-local PLAYER_MASK = {
-    "0000001000000",
-    "0000011100000",
-    "0000011100000",
-    "0111111111110",
-    "1111111111111",
-    "1111111111111",
-}
-
-local MYSTERY_MASK = {
-    "0001111111000",
-    "0111111111110",
-    "1110111110111",
-    "1111111111111",
-    "0011000001100",
 }
 
 local function compile_mask(mask)
     local runs = {}
+    local eyes = {}
     for row = 1, #mask do
         local line = mask[row]
         local first = nil
@@ -99,19 +133,27 @@ local function compile_mask(mask)
             if line:sub(col, col) == "1" then
                 first = first or col
             elseif first then
-                runs[#runs + 1] = { first - 1, row - 1, col - first, 1 - (row - 1) / #mask * 0.28 }
+                runs[#runs + 1] = { first - 1, row - 1, col - first, 1 - (row - 1) / #mask * 0.35 }
                 first = nil
             end
         end
+        local left = line:find("1", 1, true)
+        local right = left and #line - line:reverse():find("1", 1, true) + 1
+        if left and line:find("11011", 1, true) then
+            for col = left + 1, right - 1 do
+                if line:sub(col, col) == "0" then eyes[#eyes + 1] = { col - 1, row - 1 } end
+            end
+        end
     end
+    runs.eyes = eyes
     return runs
 end
 
-for i = 1, #INVADER_MASKS do
-    INVADER_MASKS[i] = compile_mask(INVADER_MASKS[i])
+for i = 1, #INVADER_FRAMES do
+    for f = 1, 2 do
+        INVADER_FRAMES[i][f] = compile_mask(INVADER_FRAMES[i][f])
+    end
 end
-PLAYER_MASK = compile_mask(PLAYER_MASK)
-MYSTERY_MASK = compile_mask(MYSTERY_MASK)
 
 local scenegraph = {
     screen = table.clone(UIWorkspaceSettings.screen),
@@ -160,15 +202,6 @@ local scenegraph = {
         size = { 560, 22 }, position = { 0, 272, 20 },
     },
 }
-
-local function rect_def()
-    return UIWidget.create_definition({
-        { pass_type = "texture", style_id = "gfx",
-            value = "content/ui/materials/backgrounds/default_square",
-            style = { hdr = true, color = { 0, 0, 0, 0 } },
-        }
-    }, "game_area", nil, { 1, 1 })
-end
 
 local widget_definitions = {
     bg = UIWidget.create_definition({
@@ -293,103 +326,346 @@ local function set_color(dst, src, alpha)
     dst[4] = src[4]
 end
 
-local function clear_rect(w)
-    w.style.gfx.color[1] = 0
-end
-
-local function draw_rect(w, x, y, width, height, color, alpha, z)
-    w.content.size[1] = width
-    w.content.size[2] = height
-    w.offset[1] = x
-    w.offset[2] = y
-    w.offset[3] = z or 5
-    set_color(w.style.gfx.color, color, alpha)
-end
-
-local function draw_mask(widgets, index, x, y, mask, pixel_size, color, alpha, z, gap, pixel_height)
-    gap = gap or 0
-    pixel_height = pixel_height or pixel_size
-
-    for i = 1, #mask do
-        local run = mask[i]
-        local w = widgets[index]
-        if not w then return index end
-        draw_rect(w, x + run[1] * (pixel_size + gap), y + run[2] * (pixel_height + gap),
-            run[3] * pixel_size + (run[3] - 1) * gap, pixel_height, color, math_floor(alpha * run[4]), z)
-        index = index + 1
-    end
-
-    return index
-end
+local ROW_COLORS = { COLORS.invader_top, COLORS.invader_mid, COLORS.invader_mid, COLORS.invader_low, COLORS.invader_low }
+local GROUND_Y = 574
 
 function InvadersView:init(settings, context)
     InvadersView.super.init(self, definitions, settings, context)
     self._game = context.game
     self._no_cursor = true
 
-    self._enemy_pixel_widgets = {}
-    for i = 1, ENEMY_PIXELS do
-        self._enemy_pixel_widgets[i] = UIWidget.init("inv_enemy_pixel_" .. i, rect_def())
-    end
+    self._canvas = Gfx.Canvas.new(GAME_W, GAME_H, 7000)
+    self._particles = Gfx.Particles.new(420)
+    self._shaker = Gfx.Shaker.new()
+    self._time = 0
+    self._alive = {}
+    self._shield_alive = {}
+    self._prev_state = nil
+    self._prev_player = nil
+    self._prev_bullet = false
+    self._muzzle = 0
+    self._hit_flash = 0
+    self._wave_flash = 0
+    self._prev_wave = nil
+    self._mystery_boom = false
+    self._last_mystery_x = nil
 
-    self._shield_widgets = {}
-    for i = 1, SHIELD_WIDGETS do
-        self._shield_widgets[i] = UIWidget.init("inv_shield_" .. i, rect_def())
-    end
-
-    self._player_widgets = {}
-    for i = 1, PLAYER_PIXELS do
-        self._player_widgets[i] = UIWidget.init("inv_player_" .. i, rect_def())
-    end
-
-    self._mystery_widgets = {}
-    for i = 1, MYSTERY_PIXELS do
-        self._mystery_widgets[i] = UIWidget.init("inv_mystery_" .. i, rect_def())
-    end
-
-    self._bullet_widgets = {}
-    for i = 1, BULLET_WIDGETS do
-        self._bullet_widgets[i] = UIWidget.init("inv_bullet_" .. i, rect_def())
-    end
-
-    self._star_widgets = {}
-    for i = 1, STAR_WIDGETS do
-        local w = UIWidget.init("inv_star_" .. i, rect_def())
-        w._x = 5 + (i * 137.51) % 590
-        w._y = (i * 83.17) % 460
-        w._layer = 1 + i % 3
-        w._size = w._layer == 3 and 2 or 1
-        w._phase = i * 2.399
-        self._star_widgets[i] = w
-    end
-
-    self._grid_widgets = {}
-    for i = 1, 18 do
-        self._grid_widgets[i] = UIWidget.init("inv_grid_" .. i, rect_def())
+    self._stars = {}
+    for i = 1, STAR_COUNT do
+        local layer = 1 + i % 3
+        self._stars[i] = {
+            x = (i * 137.51) % GAME_W,
+            y = (i * 83.17 + i * i * 0.37) % GAME_H,
+            layer = layer,
+            phase = i * 2.399,
+            size = layer == 3 and 1.8 or layer == 2 and 1.3 or 0.9,
+        }
     end
 end
 
 function InvadersView:dialogue_system() return nil end
 function InvadersView:is_using_input() return false end
 
+function InvadersView:_detect_events(ent)
+    local game = self._game
+    local particles = self._particles
+    local enemies = ent.enemies or {}
+    local alive = self._alive
+
+    for i = 1, #enemies do
+        local e = enemies[i]
+        if alive[e] and not e.alive then
+            local color = ROW_COLORS[e.row] or COLORS.invader_mid
+            local cx, cy = e.x + e.w * 0.5, e.y + e.h * 0.5
+            particles:burst(cx, cy, 16, 60, 260, 0.25, 0.6, 1.8, color, "spark", 3)
+            particles:burst(cx, cy, 8, 30, 140, 0.4, 0.9, 4, color, "shard", 1.5, 90)
+            particles:shockwave(cx, cy, 34, 0.3, color, 2.5)
+            particles:flash(cx, cy, 30, 0.2, COLORS.white)
+            self._shaker:add(0.08)
+        end
+        alive[e] = e.alive or nil
+    end
+
+    local shields = ent.shields or {}
+    local shield_alive = self._shield_alive
+    for i = 1, #shields do
+        local b = shields[i]
+        if shield_alive[b] and not b.alive then
+            particles:burst(b.x + b.w * 0.5, b.y + b.h * 0.5, 3, 20, 110, 0.3, 0.6, 2.2, COLORS.shield, "dot", 3, 160)
+        end
+        shield_alive[b] = b.alive or nil
+    end
+
+    local state = game:state()
+    if state == "dying" and self._prev_state ~= "dying" and self._prev_player then
+        local p = self._prev_player
+        local cx, cy = p.x + p.w * 0.5, p.y + p.h * 0.5
+        particles:burst(cx, cy, 50, 80, 420, 0.4, 1.1, 2.4, COLORS.flame, "spark", 2)
+        particles:burst(cx, cy, 20, 40, 200, 0.7, 1.4, 5, COLORS.hull, "shard", 1.2, 140)
+        particles:burst(cx, cy, 12, 10, 60, 0.8, 1.6, 10, COLORS.flame, "smoke", 1, -30)
+        particles:shockwave(cx, cy, 110, 0.7, COLORS.flame, 4)
+        particles:flash(cx, cy, 110, 0.45, COLORS.flame)
+        self._hit_flash = 1
+        self._shaker:add(0.9)
+    end
+
+    local wave = game:wave()
+    if self._prev_wave and wave ~= self._prev_wave then
+        if wave > self._prev_wave then self._wave_flash = 1 end
+        self._alive = {}
+        self._shield_alive = {}
+        alive = self._alive
+        for i = 1, #enemies do alive[enemies[i]] = enemies[i].alive or nil end
+        for i = 1, #shields do self._shield_alive[shields[i]] = shields[i].alive or nil end
+    end
+
+    local mystery_hit = game.mystery_hit_ticks and game:mystery_hit_ticks() or 0
+    if mystery_hit > 0 and not self._mystery_boom then
+        local mx = (game.mystery_x and game:mystery_x() or self._last_mystery_x or GAME_W * 0.5) + 25
+        particles:burst(mx, 54, 40, 80, 380, 0.4, 1, 2.2, COLORS.mystery, "spark", 2.2)
+        particles:burst(mx, 54, 14, 30, 160, 0.6, 1.2, 5, COLORS.mystery_hot, "shard", 1.2, 120)
+        particles:shockwave(mx, 54, 90, 0.6, COLORS.mystery, 3.5)
+        particles:flash(mx, 54, 80, 0.4, COLORS.mystery_hot)
+        self._shaker:add(0.4)
+    end
+    self._mystery_boom = mystery_hit > 0
+    if ent.mystery then self._last_mystery_x = ent.mystery.x end
+
+    local has_bullet = ent.player_bullets and ent.player_bullets[1] ~= nil
+    if has_bullet and not self._prev_bullet then
+        self._muzzle = 1
+    end
+    self._prev_bullet = has_bullet
+
+    self._prev_state = state
+    self._prev_wave = wave
+    if ent.player then
+        local p = self._prev_player or {}
+        p.x, p.y, p.w, p.h = ent.player.x, ent.player.y, ent.player.w, ent.player.h
+        self._prev_player = p
+    end
+end
+
+function InvadersView:_draw_space(canvas, t, sx, sy)
+    canvas:vgradient(0, 0, GAME_W, GAME_H, 0.2, COLORS.space_top, COLORS.space_low, 255, 255, 30)
+
+    for i = 0, 3 do
+        local nx = 300 + math_sin(t * 0.05 + i * 1.7) * 220
+        local ny = 180 + math_cos(t * 0.04 + i * 2.3) * 110 + i * 40
+        canvas:glow(nx, ny, 150 + i * 25, 0.3, i % 2 == 0 and COLORS.nebula_a or COLORS.nebula_b, 26, 6)
+    end
+
+    local px, py, pr = 555 + sx * 0.1, 500 + sy * 0.1, 80
+    canvas:glow(px, py, pr * 1.5, 0.4, COLORS.atmosphere, 34, 6)
+    canvas:circle(px, py, pr, 0.45, COLORS.planet, 255, 0.28)
+    canvas:circle(px - pr * 0.18, py - pr * 0.18, pr * 0.8, 0.46, COLORS.planet, 255, 0.4)
+    canvas:circle(px - pr * 0.32, py - pr * 0.32, pr * 0.45, 0.47, COLORS.planet, 200, 0.55, 0.05)
+    for band = -2, 2 do
+        canvas:ellipse(px, py + band * 17, pr * 0.95 - math_abs(band) * 12, 3, 0.48, COLORS.planet_dark, 90)
+    end
+    canvas:ellipse(px + pr * 0.35, py + pr * 0.35, pr * 0.72, pr * 0.72, 0.49, COLORS.planet_dark, 120)
+    canvas:ring(px, py, pr + 1.5, 2, 0.5, COLORS.atmosphere, 70)
+    canvas:ring(px, py, pr * 1.45, 1.2, 0.5, COLORS.atmosphere, 40, 40, 2.4, 5.6)
+
+    for i = 1, STAR_COUNT do
+        local s = self._stars[i]
+        local twinkle = (math_sin(t * (1.3 + s.layer * 0.7) + s.phase) + 1) * 0.5
+        local x = (s.x + sx * s.layer * 0.25) % GAME_W
+        local y = (s.y + t * s.layer * 4 + sy * s.layer * 0.25) % GROUND_Y
+        local alpha = 50 + s.layer * 45 + twinkle * 70
+        local color = s.layer == 3 and COLORS.star_hot or COLORS.star
+
+        canvas:rect(x - s.size * 0.5, y - s.size * 0.5, s.size, s.size, 0.6, color, alpha, 1, 0.5)
+        if s.layer == 3 and twinkle > 0.7 then
+            local flare = (twinkle - 0.7) * 20
+            canvas:rect(x - flare, y - 0.4, flare * 2, 0.8, 0.61, color, alpha * 0.6)
+            canvas:rect(x - 0.4, y - flare, 0.8, flare * 2, 0.61, color, alpha * 0.6)
+        end
+    end
+
+    canvas:vgradient(0, GROUND_Y - 40, GAME_W, 40, 0.7, COLORS.ground, COLORS.ground, 0, 30, 10)
+    canvas:rect(0, GROUND_Y, GAME_W, GAME_H - GROUND_Y, 0.75, COLORS.space_low, 255)
+    canvas:glow_line(0, GROUND_Y, GAME_W, GROUND_Y, 1.5, 0.8, COLORS.ground, 190, 3)
+    local scroll = (t * 18) % 12
+    for i = 0, 3 do
+        local y = GROUND_Y + 3 + i * 6 + scroll * (i + 1) / 4
+        if y < GAME_H then
+            canvas:rect(0, y, GAME_W, 1, 0.78, COLORS.ground, 70 - i * 14)
+        end
+    end
+    for x = -300, 900, 40 do
+        canvas:line(300 + (x - 300) * 0.35, GROUND_Y, x, GAME_H + 10, 1, 0.77, COLORS.ground, 45)
+    end
+end
+
+function InvadersView:_draw_enemies(canvas, enemies, t, sx, sy)
+    for i = 1, #enemies do
+        local e = enemies[i]
+        if e.alive then
+            local kind = e.row == 1 and 1 or e.row <= 3 and 2 or 3
+            local mask = INVADER_FRAMES[kind][e.frame == 2 and 2 or 1]
+            local color = ROW_COLORS[e.row] or COLORS.invader_mid
+            local ex, ey = e.x + sx, e.y + sy
+            local wave = 0.85 + 0.3 * (math_sin(t * 3 - e.x * 0.025 - e.y * 0.01) + 1) * 0.5
+            local pw = (30 - 7) / 8
+            local ph = (22 - 6) / 7
+
+            for r = 1, #mask do
+                local run = mask[r]
+                canvas:rect(ex + run[1] * (pw + 1) - 2, ey + run[2] * (ph + 1) - 2, run[3] * pw + (run[3] - 1) + 4, ph + 4, 3.1, color, 26 * wave)
+                canvas:rect(ex + run[1] * (pw + 1), ey + run[2] * (ph + 1), run[3] * pw + (run[3] - 1), ph, 3.2, color, 245, run[4] * wave, 0)
+                if run[2] == 0 then
+                    canvas:rect(ex + run[1] * (pw + 1), ey, run[3] * pw + (run[3] - 1), 1, 3.25, color, 170, 1, 0.55)
+                end
+            end
+
+            local eyes = mask.eyes
+            local blink = (math_sin(t * 2.2 + e.x * 0.13) > 0.97) and 0.2 or 1
+            for k = 1, #eyes do
+                local eye = eyes[k]
+                local ex2 = ex + eye[1] * (pw + 1) + pw * 0.5
+                local ey2 = ey + eye[2] * (ph + 1) + ph * 0.5
+                canvas:rect(ex2 - 2.5, ey2 - 2.5, 5, 5, 3.3, COLORS.eye, 70 * blink)
+                canvas:rect(ex2 - 1, ey2 - 1, 2, 2, 3.35, COLORS.eye, 255 * blink, 1, 0.4)
+            end
+        end
+    end
+end
+
+function InvadersView:_draw_shields(canvas, shields, t, sx, sy)
+    for i = 1, #shields do
+        local b = shields[i]
+        if b.alive then
+            local light = ((b.x * 3 + b.y * 7) % 5) / 5
+            local shimmer = (math_sin(t * 2 - b.x * 0.05) + 1) * 0.5
+            canvas:rect(b.x + sx, b.y + sy, b.w - 0.5, b.h - 0.5, 3, COLORS.shield, 200, 0.75 + light * 0.25)
+            canvas:rect(b.x + sx, b.y + sy, b.w - 0.5, 1.2, 3.05, COLORS.shield_hot, 140 + shimmer * 80, 1, 0.3)
+        end
+    end
+end
+
+function InvadersView:_draw_mystery(canvas, mystery, t, sx, sy)
+    if not mystery then return end
+
+    local cx = mystery.x + 25 + sx
+    local cy = mystery.y + 12 + sy
+
+    canvas:tri(cx - 6, cy + 4, cx + 6, cy + 4, cx, cy + 4, 2.9, COLORS.beam, 0)
+    canvas:quad(cx - 8, cy + 6, cx + 8, cy + 6, cx + 30, GROUND_Y - 150, cx - 30, GROUND_Y - 150, 2.8, COLORS.beam, 18 + (math_sin(t * 9) + 1) * 8)
+    canvas:glow(cx, cy, 46, 2.9, COLORS.mystery, 70)
+    canvas:ellipse(cx, cy + 2, 25, 7, 3.2, COLORS.mystery, 255, 0.55)
+    canvas:ellipse(cx, cy + 1, 23, 5.5, 3.25, COLORS.mystery, 255, 1)
+    canvas:ellipse(cx, cy - 4, 11, 8, 3.3, COLORS.mystery_hot, 200, 0.8, 0.2)
+    canvas:ellipse(cx - 3, cy - 6, 4, 3, 3.35, COLORS.white, 170)
+
+    for light = 0, 5 do
+        local lx = cx - 18 + light * 7.2
+        local on = (math_sin(t * 8 - light * 1.1) + 1) * 0.5
+        canvas:circle(lx, cy + 2, 1.8, 3.4, COLORS.mystery_hot, 120 + on * 135, 1, on * 0.6, 6)
+        canvas:circle(lx, cy + 2, 4, 3.38, COLORS.mystery_hot, on * 60, 1, 0, 8)
+    end
+end
+
+function InvadersView:_draw_player(canvas, player, t, sx, sy)
+    if not player then return end
+
+    local x = player.x + sx
+    local y = player.y + sy
+    local cx = x + player.w * 0.5
+    local flick = (math_sin(t * 40) + math_sin(t * 67)) * 0.25 + 1
+
+    for side = -1, 1, 2 do
+        local fx = cx + side * 11
+        local len = 8 * flick
+        canvas:glow(fx, y + 22, 10, 4.8, COLORS.flame, 70)
+        canvas:tri(fx - 3, y + 18, fx + 3, y + 18, fx, y + 18 + len + 4, 4.85, COLORS.flame, 220)
+        canvas:tri(fx - 1.5, y + 18, fx + 1.5, y + 18, fx, y + 18 + len, 4.86, COLORS.flame_core, 255)
+    end
+
+    canvas:glow(cx, y + 12, 34, 4.7, COLORS.player, 45)
+
+    canvas:quad(x + 1, y + 16, x + player.w - 1, y + 16, x + player.w - 6, y + 20, x + 6, y + 20, 5, COLORS.hull, 255, 0.5)
+    canvas:tri(x, y + 17, cx - 4, y + 6, cx - 4, y + 17, 5.05, COLORS.hull, 255, 0.8)
+    canvas:tri(x + player.w, y + 17, cx + 4, y + 6, cx + 4, y + 17, 5.05, COLORS.hull, 255, 0.65)
+    canvas:quad(cx - 6, y + 18, cx - 4, y + 2, cx + 4, y + 2, cx + 6, y + 18, 5.1, COLORS.hull, 255, 1)
+    canvas:tri(cx - 4, y + 2, cx + 4, y + 2, cx, y - 6, 5.12, COLORS.hull_light, 255, 0.9)
+    canvas:line(cx - 4, y + 2, cx - 6, y + 18, 1, 5.13, COLORS.hull_light, 200)
+    canvas:line(x, y + 17, cx - 4, y + 6, 1, 5.13, COLORS.hull_light, 170)
+    canvas:ellipse(cx, y + 7, 2.4, 4, 5.15, COLORS.cockpit, 255)
+    canvas:ellipse(cx - 0.6, y + 5.5, 1, 1.8, 5.16, COLORS.white, 220)
+
+    for side = -1, 1, 2 do
+        local lx = cx + side * 16
+        local on = (math_sin(t * 5 + side) + 1) * 0.5
+        canvas:rect(lx - 1, y + 15, 2, 2, 5.17, side < 0 and COLORS.eye or COLORS.player_core, 150 + on * 105)
+    end
+
+    if self._muzzle > 0 then
+        canvas:glow(cx, y - 8, 18 * self._muzzle, 5.2, COLORS.player_core, 200 * self._muzzle)
+        canvas:tri(cx - 4, y - 5, cx + 4, y - 5, cx, y - 5 - 16 * self._muzzle, 5.21, COLORS.white, 230 * self._muzzle)
+    end
+end
+
+function InvadersView:_draw_bullets(canvas, player_bullets, enemy_bullets, t, sx, sy)
+    local pb = player_bullets[1]
+    if pb then
+        local cx = pb.x + pb.w * 0.5 + sx
+        local top = pb.y + sy
+        canvas:vgradient(cx - 3, top + pb.h, 6, 40, 5.4, COLORS.player, COLORS.player, 110, 0, 8)
+        canvas:glow_line(cx, top, cx, top + pb.h, 2.5, 5.5, COLORS.player_core, 255, 3)
+        canvas:glow(cx, top + 2, 10, 5.45, COLORS.player_core, 120)
+    end
+
+    for i = 1, #enemy_bullets do
+        local b = enemy_bullets[i]
+        local bx = b.x + b.w * 0.5 + sx
+        local by = b.y + sy
+        canvas:glow(bx, by + b.h * 0.5, 12, 5.3, COLORS.ebullet, 70)
+
+        if b.kind == 1 then
+            local phase = t * 24 + b.y * 0.3
+            local px, py = bx + math_sin(phase) * 3, by
+            for k = 1, 4 do
+                local nx = bx + math_sin(phase + k * 1.6) * 3
+                local ny = by + k * b.h / 4
+                canvas:line(px, py, nx, ny, 2, 5.35, COLORS.ebullet, 255, 1, 0.2)
+                px, py = nx, ny
+            end
+        elseif b.kind == 2 then
+            canvas:rect(bx - 1, by, 2, b.h, 5.35, COLORS.ebullet, 255, 1, 0.3)
+            local bar = (math_floor(t * 20) % 3) * 4
+            canvas:rect(bx - 3, by + bar, 6, 2, 5.36, COLORS.mystery_hot, 255)
+        else
+            canvas:rect(bx - 1, by, 2, b.h, 5.35, COLORS.ebullet, 255, 1, 0.2)
+            local roll = math_sin(t * 30 + b.y * 0.2) * 3
+            canvas:rect(bx - 1 + roll, by + 3, 2, 2, 5.36, COLORS.white, 230)
+            canvas:rect(bx - 1 - roll, by + b.h - 5, 2, 2, 5.36, COLORS.white, 230)
+        end
+
+        canvas:circle(bx, by + b.h, 2.2, 5.37, COLORS.mystery_hot, 255, 1, 0.5, 8)
+    end
+end
+
 function InvadersView:_draw_widgets(dt, t, input_service, ui_renderer, render_settings)
-    if self._game then
+    local game = self._game
+
+    if game then
         local score_w = self._widgets_by_name.score_text
-        if score_w then score_w.content.text = string.format("Score: %04d", self._game:score()) end
+        if score_w then score_w.content.text = string.format("Score: %04d", game:score()) end
 
         local wave_w = self._widgets_by_name.wave_text
-        if wave_w then wave_w.content.text = string.format("Wave: %d", self._game:wave()) end
+        if wave_w then wave_w.content.text = string.format("Wave: %d", game:wave()) end
 
         local lives_w = self._widgets_by_name.lives_text
-        if lives_w then lives_w.content.text = string.format("Hull: %d", self._game:lives()) end
+        if lives_w then lives_w.content.text = string.format("Hull: %d", game:lives()) end
 
         local message_w = self._widgets_by_name.message_text
         if message_w then
-            if self._game:is_game_over() then
+            if game:is_game_over() then
                 message_w.content.text = "GAME OVER"
                 message_w.style.text.text_color = COLORS.warning
             else
-                local text = self._game:level_text()
+                local text = game:level_text()
                 message_w.content.text = text
                 message_w.style.text.text_color = text ~= "" and COLORS.message or COLORS.hidden
             end
@@ -400,236 +676,58 @@ function InvadersView:_draw_widgets(dt, t, input_service, ui_renderer, render_se
     if hsw then hsw.content.text = mod:localize("invaders_highscore") .. " " .. (mod:get("invaders_highscore") or 0) end
 
     local noise = self._widgets_by_name.scanner_noise
-    if noise and self._game then
-        noise.style.noise.color[1] = 70 + math_floor((math_sin(self._game:time() * 2.3) + 1) * 18) + math_floor(self._game:shake() * 70)
+    if noise and game then
+        noise.style.noise.color[1] = 70 + math_floor((math_sin(game:time() * 2.3) + 1) * 18) + math_floor(game:shake() * 70)
     end
 
     InvadersView.super._draw_widgets(self, dt, t, input_service, ui_renderer, render_settings)
 
-    if not self._game then return end
+    if not game then return end
 
-    self:_draw_dynamic(ui_renderer)
+    dt = math_min(dt or 0.016, 0.05)
+    self._time = self._time + dt
+
+    local ent = game:entities()
+    self:_detect_events(ent)
+    self._particles:update(dt)
+    self._shaker:update(dt, 8)
+    self._muzzle = math_max(0, self._muzzle - dt * 9)
+    self._hit_flash = math_max(0, self._hit_flash - dt * 1.4)
+    self._wave_flash = math_max(0, self._wave_flash - dt * 0.9)
+
+    local canvas = self._canvas
+    if not canvas:begin(ui_renderer, self:_scenegraph_world_position("game_area")) then return end
+
+    local time = self._time
+    local shake = game:shake()
+    local sx = math_sin(time * 71) * shake * 5 + self._shaker.x
+    local sy = math_sin(time * 93 + 1.2) * shake * 5 + self._shaker.y
+
+    self:_draw_space(canvas, time, sx, sy)
+    self:_draw_shields(canvas, ent.shields or {}, time, sx, sy)
+    self:_draw_enemies(canvas, ent.enemies or {}, time, sx, sy)
+    self:_draw_mystery(canvas, ent.mystery, time, sx, sy)
+    self:_draw_player(canvas, ent.player, time, sx, sy)
+    self:_draw_bullets(canvas, ent.player_bullets or {}, ent.enemy_bullets or {}, time, sx, sy)
+    canvas:set_shake(sx, sy)
+    self._particles:draw(canvas, 6)
+    canvas:set_shake(0, 0)
+
+    if self._hit_flash > 0 then
+        canvas:rect(0, 0, GAME_W, GAME_H, 7, COLORS.warning, self._hit_flash * 110)
+    end
+    if self._wave_flash > 0 then
+        canvas:sweep(0, 0, GAME_W, GAME_H, (1 - self._wave_flash) * 2, 2, 7.1, COLORS.star_hot, 160 * self._wave_flash, 160)
+    end
+
+    canvas:crt(0, 0, GAME_W, GAME_H, time, 8, { tint = COLORS.player, vignette_depth = 90, vignette_alpha = 170 })
+    canvas:finish()
 end
 
-function InvadersView:_draw_dynamic(ui_renderer)
-    local ent = self._game:entities()
-    local shake = self._game:shake()
-    local time = self._game:time()
-    local sx = math_sin(time * 71) * shake * 5
-    local sy = math_sin(time * 93 + 1.2) * shake * 5
-
-    self:_draw_grid(ui_renderer, sx, sy)
-    self:_draw_stars(ui_renderer, sx, sy)
-    self:_draw_shields(ui_renderer, ent.shields, sx, sy)
-    self:_draw_enemies(ui_renderer, ent.enemies, sx, sy)
-    self:_draw_mystery(ui_renderer, ent.mystery, sx, sy)
-    self:_draw_bullets(ui_renderer, ent.player_bullets, ent.enemy_bullets, sx, sy)
-    self:_draw_player(ui_renderer, ent.player, sx, sy)
+function InvadersView:destroy()
+    self._canvas = nil
+    self._particles = nil
+    InvadersView.super.destroy(self)
 end
-
-function InvadersView:_draw_grid(ui_renderer, sx, sy)
-    local idx = 1
-
-    for y = 78, 558, 80 do
-        local w = self._grid_widgets[idx]
-        draw_rect(w, sx, y + sy, GAME_W, 1, COLORS.grid, 22, 1)
-        UIWidget.draw(w, ui_renderer)
-        idx = idx + 1
-    end
-
-    for x = 70, 530, 92 do
-        local w = self._grid_widgets[idx]
-        draw_rect(w, x + sx, sy, 1, GAME_H, COLORS.grid, 15, 1)
-        UIWidget.draw(w, ui_renderer)
-        idx = idx + 1
-    end
-
-    draw_rect(self._grid_widgets[idx], 22, 73, 556, 1, COLORS.grid_hot, 65, 3)
-    UIWidget.draw(self._grid_widgets[idx], ui_renderer)
-    idx = idx + 1
-
-    for i = idx, #self._grid_widgets do
-        clear_rect(self._grid_widgets[i])
-    end
-end
-
-function InvadersView:_draw_stars(ui_renderer, sx, sy)
-    local t = self._game:time()
-
-    for i = 1, STAR_WIDGETS do
-        local w = self._star_widgets[i]
-        local pulse = (math_sin(t * 0.7 + w._phase) + 1) * 0.5
-        local color = w._layer == 3 and COLORS.star_hot or COLORS.star
-        local alpha = math_floor(22 + w._layer * 19 + pulse * 22)
-        local x = w._x + sx * w._layer * 0.2
-        local y = 76 + (w._y + t * w._layer * 1.5) % 460 + sy * w._layer * 0.2
-
-        if w._layer == 3 then
-            draw_rect(w, x - 2, y - 2, 6, 6, color, 12 + pulse * 8, 2)
-            UIWidget.draw(w, ui_renderer)
-        end
-        draw_rect(w, x, y, w._size, w._size, color, alpha, 2)
-        UIWidget.draw(w, ui_renderer)
-    end
-end
-
-function InvadersView:_draw_enemies(ui_renderer, enemies, sx, sy)
-    local index = 1
-
-    for i = 1, ENEMY_WIDGETS do
-        local enemy = enemies[i]
-
-        if enemy and enemy.alive then
-            local mask_type = enemy.row == 1 and 1 or enemy.row <= 3 and 2 or 3
-            local mask = INVADER_MASKS[mask_type]
-            local color = enemy.row == 1 and COLORS.invader_top or enemy.row <= 3 and COLORS.invader_mid or COLORS.invader_low
-            local alpha = 235
-
-            for band = 1, 2 do
-                local glow = self._enemy_pixel_widgets[index]
-                draw_rect(glow, enemy.x + 3 - band * 2 + sx, enemy.y + 5 - band + sy, 25 + band * 4, 13 + band * 2, color, 22 - band * 6, 7)
-                index = index + 1
-            end
-
-            -- Fit the 8x7 mask and its gaps to SpaceInvadersGame's 30x22 hitbox.
-            index = draw_mask(self._enemy_pixel_widgets, index, enemy.x + sx, enemy.y + sy, mask, (30 - 7) / 8, color, alpha, 8, 1, (22 - 6) / 7)
-
-            if index <= ENEMY_PIXELS then
-                local core = self._enemy_pixel_widgets[index]
-                draw_rect(core, enemy.x + 12 + sx, enemy.y + 4 + sy, 7, 1, COLORS.invader_core, 200, 9)
-                index = index + 1
-            end
-        end
-    end
-
-    for i = index, ENEMY_PIXELS do
-        clear_rect(self._enemy_pixel_widgets[i])
-    end
-
-    for i = 1, index - 1 do
-        UIWidget.draw(self._enemy_pixel_widgets[i], ui_renderer)
-    end
-end
-
-function InvadersView:_draw_shields(ui_renderer, shields, sx, sy)
-    local index = 1
-
-    for i = 1, #shields do
-        local block = shields[i]
-
-        if block.alive and index + 1 <= SHIELD_WIDGETS then
-            local w = self._shield_widgets[index]
-            local light = (block.x * 3 + block.y * 7) % 5
-            draw_rect(w, block.x + sx, block.y + sy, block.w - 0.5, block.h - 0.5, COLORS.shield, 155 + light * 16, 6)
-            draw_rect(self._shield_widgets[index + 1], block.x + sx, block.y + sy, block.w - 1, 1, COLORS.shield_hot, 155 + light * 20, 7)
-            index = index + 2
-        end
-    end
-
-    for i = index, SHIELD_WIDGETS do
-        clear_rect(self._shield_widgets[i])
-    end
-
-    for i = 1, index - 1 do
-        UIWidget.draw(self._shield_widgets[i], ui_renderer)
-    end
-end
-
-function InvadersView:_draw_player(ui_renderer, player, sx, sy)
-    local index = 1
-
-    if player then
-        draw_rect(self._player_widgets[index], player.x - 3 + sx, player.y + 9 + sy, 45, 12, COLORS.player, 25, 10)
-        index = index + 1
-        index = draw_mask(self._player_widgets, index, player.x + sx, player.y + sy, PLAYER_MASK, 3, COLORS.player, 230, 11, 0)
-
-        for side = 0, 1 do
-            local x = player.x + 5 + side * 24 + sx
-            draw_rect(self._player_widgets[index], x, player.y + 12 + sy, 5, 4, COLORS.armor, 240, 12)
-            draw_rect(self._player_widgets[index + 1], x, player.y + 11 + sy, 5, 1, COLORS.player_core, 230, 13)
-            draw_rect(self._player_widgets[index + 2], x + 1, player.y + 18 + sy, 3, 3 + math_sin(self._game:time() * 8) * 0.7, COLORS.player_core, 140, 10)
-            index = index + 3
-        end
-
-        if index <= PLAYER_PIXELS then
-            draw_rect(self._player_widgets[index], player.x + 17 + sx, player.y - 5 + sy, 4, 8, COLORS.player_core, 210, 12)
-            index = index + 1
-        end
-    end
-
-    for i = index, PLAYER_PIXELS do
-        clear_rect(self._player_widgets[i])
-    end
-
-    for i = 1, index - 1 do
-        UIWidget.draw(self._player_widgets[i], ui_renderer)
-    end
-end
-
-function InvadersView:_draw_mystery(ui_renderer, mystery, sx, sy)
-    local index = 1
-
-    if mystery then
-        draw_rect(self._mystery_widgets[index], mystery.x + 4 + sx, mystery.y + 6 + sy, 44, 16, COLORS.mystery, 30, 9)
-        index = index + 1
-        index = draw_mask(self._mystery_widgets, index, mystery.x + sx, mystery.y + sy, MYSTERY_MASK, 4, COLORS.mystery, 240, 10, 0)
-
-        for light = 0, 4 do
-            draw_rect(self._mystery_widgets[index], mystery.x + 9 + light * 8 + sx, mystery.y + 13 + sy, 3, 2, COLORS.mystery_hot, 140 + 80 * math_sin(self._game:time() * 3 - light), 12)
-            index = index + 1
-        end
-
-        if index <= MYSTERY_PIXELS then
-            draw_rect(self._mystery_widgets[index], mystery.x + 10 + sx, mystery.y + 6 + sy, 30, 4, COLORS.mystery_hot, 180, 11)
-            index = index + 1
-        end
-    end
-
-    for i = index, MYSTERY_PIXELS do
-        clear_rect(self._mystery_widgets[i])
-    end
-
-    for i = 1, index - 1 do
-        UIWidget.draw(self._mystery_widgets[i], ui_renderer)
-    end
-end
-
-function InvadersView:_draw_bullets(ui_renderer, player_bullets, enemy_bullets, sx, sy)
-    local index = 1
-
-    local pb = player_bullets[1]
-    if pb then
-        draw_rect(self._bullet_widgets[index], pb.x + sx, pb.y + sy, pb.w, pb.h, COLORS.pbullet, 255, 13)
-        index = index + 1
-
-        if index <= BULLET_WIDGETS then
-            draw_rect(self._bullet_widgets[index], pb.x - 2 + sx, pb.y - 1 + sy, pb.w + 4, pb.h + 4, COLORS.player, 65, 12)
-            index = index + 1
-        end
-        draw_rect(self._bullet_widgets[index], pb.x + sx, pb.y + pb.h + sy, pb.w, 9, COLORS.player_core, 90, 12)
-        index = index + 1
-    end
-
-    for i = 1, #enemy_bullets do
-        if index + 2 > BULLET_WIDGETS then break end
-
-        local b = enemy_bullets[i]
-        local wobble = b.kind == 1 and math_floor(math_sin(self._game:time() * 18 + b.y) * 2) or b.kind == 2 and 1 or -1
-        draw_rect(self._bullet_widgets[index], b.x + wobble + sx, b.y + sy, b.w, b.h, COLORS.ebullet, 245, 13)
-        draw_rect(self._bullet_widgets[index + 1], b.x + wobble - 2 + sx, b.y - 2 + sy, b.w + 4, b.h + 4, COLORS.ebullet, 45, 12)
-        draw_rect(self._bullet_widgets[index + 2], b.x + wobble + sx, b.y + b.h - 3 + sy, b.w, 2, COLORS.mystery_hot, 240, 14)
-        index = index + 3
-    end
-
-    for i = index, BULLET_WIDGETS do
-        clear_rect(self._bullet_widgets[i])
-    end
-
-    for i = 1, index - 1 do
-        UIWidget.draw(self._bullet_widgets[i], ui_renderer)
-    end
-end
-
-function InvadersView:destroy() InvadersView.super.destroy(self) end
 
 return InvadersView

@@ -8,8 +8,8 @@ local math_sqrt = math.sqrt
 
 local CANVAS_W = 600
 local CANVAS_H = 480
-local MAX_ENVIRONMENT_SUBMISSIONS = 1600
-local MAX_SUBMISSIONS = 2400
+local MAX_ENVIRONMENT_SUBMISSIONS = 2600
+local MAX_SUBMISSIONS = 5200
 local MAX_ENTITIES = 128
 
 local COLORS = {
@@ -107,8 +107,28 @@ local function is_corrupted(cell)
     return kind == "~" or kind == "X" or kind == "corrupt" or kind == "corrupted" or kind == 2
 end
 
-local function color_with_alpha(color, alpha)
-    return Color(math_floor(math_max(0, math_min(color[1], alpha))), color[2], color[3], color[4])
+local function color_with_alpha(color, alpha, brightness)
+    local a = math_floor(math_max(0, math_min(color[1], alpha)))
+
+    if brightness and brightness ~= 1 then
+        return Color(a,
+            math_floor(math_min(255, color[2] * brightness)),
+            math_floor(math_min(255, color[3] * brightness)),
+            math_floor(math_min(255, color[4] * brightness)))
+    end
+
+    return Color(a, color[2], color[3], color[4])
+end
+
+local CIRCLE_SEGMENTS = {}
+for segments = 6, 32, 2 do
+    local points = {}
+    for i = 0, segments do
+        local angle = i / segments * math_pi * 2
+        points[i * 2 + 1] = math_cos(angle)
+        points[i * 2 + 2] = math_sin(angle)
+    end
+    CIRCLE_SEGMENTS[segments] = points
 end
 
 local NoosphereBreachRenderer = {}
@@ -134,6 +154,11 @@ function NoosphereBreachRenderer.new()
     self._center_x = CANVAS_W * 0.5
     self._shake_x = 0
     self._shake_y = 0
+    self._light_x = 0
+    self._light_y = 0
+    self._fx = {}
+    self._known_enemies = {}
+    self._seen_enemies = {}
 
     return self
 end
@@ -142,7 +167,7 @@ function NoosphereBreachRenderer:_can_submit(amount)
     return self._submission_count + (amount or 1) <= self._submission_limit
 end
 
-function NoosphereBreachRenderer:_triangle(x1, y1, x2, y2, x3, y3, layer, color, alpha)
+function NoosphereBreachRenderer:_triangle(x1, y1, x2, y2, x3, y3, layer, color, alpha, brightness)
     if not self:_can_submit(1) then return end
 
     local min_x = math_min(x1, x2, x3)
@@ -159,11 +184,11 @@ function NoosphereBreachRenderer:_triangle(x1, y1, x2, y2, x3, y3, layer, color,
     local b = Vector3((ox + x2) * scale, 0, (oy + y2) * scale)
     local c = Vector3((ox + x3) * scale, 0, (oy + y3) * scale)
 
-    Gui.triangle(self._gui, a, b, c, self._base_layer + layer, color_with_alpha(color, alpha or color[1]))
+    Gui.triangle(self._gui, a, b, c, self._base_layer + layer, color_with_alpha(color, alpha or color[1], brightness))
     self._submission_count = self._submission_count + 1
 end
 
-function NoosphereBreachRenderer:_rect(x, y, width, height, layer, color, alpha)
+function NoosphereBreachRenderer:_rect(x, y, width, height, layer, color, alpha, brightness)
     if not self:_can_submit(1) then return end
 
     local x2 = x + width
@@ -182,7 +207,7 @@ function NoosphereBreachRenderer:_rect(x, y, width, height, layer, color, alpha)
     local position = Vector3((self._origin_x + x) * scale, (self._origin_y + y) * scale, self._base_layer + layer)
     local size = Vector2((x2 - x) * scale, (y2 - y) * scale)
 
-    Gui.rect(self._gui, position, size, color_with_alpha(color, alpha or color[1]))
+    Gui.rect(self._gui, position, size, color_with_alpha(color, alpha or color[1], brightness))
     self._submission_count = self._submission_count + 1
 end
 
@@ -261,6 +286,122 @@ function NoosphereBreachRenderer:_ring(x, y, radius_x, radius_y, segments, thick
     end
 end
 
+function NoosphereBreachRenderer:_circle(x, y, radius_x, radius_y, layer, color, alpha, brightness)
+    if radius_x < 0.4 then return end
+
+    local segments = radius_x < 5 and 8 or radius_x < 14 and 12 or radius_x < 40 and 18 or 24
+    local points = CIRCLE_SEGMENTS[segments]
+
+    for i = 0, segments - 1 do
+        local j = i * 2
+        self:_triangle(x, y,
+            x + points[j + 1] * radius_x, y + points[j + 2] * radius_y,
+            x + points[j + 3] * radius_x, y + points[j + 4] * radius_y,
+            layer, color, alpha, brightness)
+    end
+end
+
+-- Soft bloom made from stacked translucent discs.
+function NoosphereBreachRenderer:_glow(x, y, radius, layer, color, alpha, steps, squash)
+    steps = steps or 4
+    squash = squash or 1
+    local per_step = alpha / steps
+
+    for i = steps, 1, -1 do
+        local r = radius * (i / steps) ^ 1.25
+        self:_circle(x, y, r, r * squash, layer + (steps - i) * 0.0005, color, per_step)
+    end
+end
+
+function NoosphereBreachRenderer:_update_fx(game, time)
+    local dt = self._last_time and math_max(0, math_min(0.1, time - self._last_time)) or 0
+    self._last_time = time
+    self._dt = dt
+
+    local fx = self._fx
+    for i = #fx, 1, -1 do
+        local e = fx[i]
+        e.life = e.life - dt
+        if e.life <= 0 then table.remove(fx, i) end
+    end
+
+    local known = self._known_enemies
+    local seen = self._seen_enemies
+    for enemy in pairs(seen) do seen[enemy] = nil end
+
+    local enemies = game:enemies() or {}
+    for i = 1, #enemies do
+        local enemy = enemies[i]
+        if enemy.alive ~= false then seen[enemy] = true end
+    end
+
+    for enemy, info in pairs(known) do
+        if not seen[enemy] then
+            local kind = info.kind
+            local color = (kind == "Sentry" or kind == "sentry") and COLORS.sentry_hot
+                or (kind == "Cortex" or kind == "cortex") and COLORS.cortex_hot
+                or COLORS.wisp_hot
+            local big = kind == "Cortex" or kind == "cortex"
+            if #fx < 40 then
+                fx[#fx + 1] = { x = info.x, y = info.y, life = big and 1.2 or 0.55, max_life = big and 1.2 or 0.55, radius = big and 5 or 1.6, color = color }
+            end
+            known[enemy] = nil
+        end
+    end
+
+    for i = 1, #enemies do
+        local enemy = enemies[i]
+        if enemy.alive ~= false then
+            local info = known[enemy]
+            if not info then
+                info = {}
+                known[enemy] = info
+            end
+            info.x, info.y, info.kind = enemy.x or 0, enemy.y or 0, enemy.kind
+        end
+    end
+end
+
+function NoosphereBreachRenderer:_draw_fx()
+    local fx = self._fx
+
+    for i = 1, #fx do
+        local e = fx[i]
+        local k = e.life / e.max_life
+        local x, y = self:_project(e.x, e.y, 0)
+        local grow = 1 - k * k * k
+        local r = e.radius * self._tile_w * (0.3 + grow * 0.9)
+        self:_ring(x, y, r, r * 0.62, 20, 2.5 * k + 0.5, 16.5, e.color, 230 * k, 0)
+        self:_glow(x, y, r * 0.8, 16.4, e.color, 120 * k * k, 3, 0.62)
+    end
+end
+
+function NoosphereBreachRenderer:_draw_post(time)
+    local h = CANVAS_H
+    local w = CANVAS_W
+    local drift = (time * 9) % 3
+
+    for y = 1 + drift, h - 1, 3 do
+        self:_rect(1, y, w - 2, 1, 19, COLORS.shadow, 40)
+    end
+
+    local sweep = (time % 5) / 5 * (h + 80) - 40
+    for i = 0, 7 do
+        local yy = sweep - i * 8
+        self:_rect(1, yy, w - 2, 8, 19.01, COLORS.circuit, (1 - i / 8) ^ 2 * 18)
+    end
+
+    for i = 0, 7 do
+        local k = 1 - i / 8
+        local a = 150 * k * k
+        local inset = i * 9
+        self:_rect(1 + inset, 1 + inset, w - 2 - inset * 2, 9, 19.02, COLORS.shadow, a)
+        self:_rect(1 + inset, h - 10 - inset, w - 2 - inset * 2, 9, 19.02, COLORS.shadow, a)
+        self:_rect(1 + inset, 10 + inset, 9, h - 20 - inset * 2, 19.02, COLORS.shadow, a)
+        self:_rect(w - 10 - inset, 10 + inset, 9, h - 20 - inset * 2, 19.02, COLORS.shadow, a)
+    end
+end
+
 function NoosphereBreachRenderer:_project(x, y, z)
     local screen_x = self._map_left + x * self._tile_w + self._shake_x
     local screen_y = self._map_top + y * self._tile_h + self._shake_y
@@ -282,8 +423,11 @@ function NoosphereBreachRenderer:_draw_tile(x, y, cell, time)
     local depth_layer = 3
     local corrupted = is_corrupted(cell)
     local base_color = corrupted and COLORS.corruption or (x + y) % 2 == 0 and COLORS.floor_a or COLORS.floor_b
+    local ldx = (world_x - self._light_x)
+    local ldy = (world_y - self._light_y)
+    local light = 0.55 + 1.6 / (1 + (ldx * ldx + ldy * ldy) * 0.35)
 
-    self:_rect(cx - half_w + 0.5, cy - half_h + 0.5, self._tile_w - 1, self._tile_h - 1, depth_layer, base_color)
+    self:_rect(cx - half_w + 0.5, cy - half_h + 0.5, self._tile_w - 1, self._tile_h - 1, depth_layer, base_color, nil, light)
 
     if is_wall(cell) then return end
 
@@ -426,7 +570,9 @@ function NoosphereBreachRenderer:_draw_player(player, layer)
     local side_x = -dy
     local side_y = dx
 
+    self:_glow(x, y, size * 5, 3.6, COLORS.player, 55, 5)
     self:_draw_shadow(player, size * 0.72, layer - 0.03)
+    self:_glow(x, y, size * 2.2, layer - 0.02, main_color, 70, 3)
 
     if dashing then
         for i = 1, 3 do
@@ -469,6 +615,8 @@ function NoosphereBreachRenderer:_draw_wisp(enemy, layer)
     local flare = 0.85 + (math_sin(phase * 1.7) + 1) * 0.12
 
     self:_draw_shadow(enemy, size * 0.7, layer - 0.03)
+    self:_glow(x, y, size * 2.6 * flare, layer - 0.02, COLORS.wisp, 80, 3)
+    self:_glow(x, y, size * 3.2, 3.62, COLORS.wisp, 26, 3)
     self:_diamond(x, y, size * 1.1 * flare, size * 1.1 * flare, layer - 0.01, COLORS.wisp, 32)
     self:_diamond(x, y, size * 0.72, size * 0.72, layer, COLORS.wisp, 230)
     self:_triangle(x, y - size * 0.72, x, y + size * 0.72, x - size * 0.72, y, layer + 0.01, COLORS.cortex_dark, 170)
@@ -489,6 +637,8 @@ function NoosphereBreachRenderer:_draw_sentry(enemy, layer)
     local dy = math_sin(angle)
 
     self:_draw_shadow(enemy, size * 0.8, layer - 0.03)
+    self:_glow(x, y, size * 2.2, layer - 0.02, COLORS.sentry, 60, 3)
+    self:_glow(x, y, size * 3, 3.62, COLORS.sentry, 22, 3)
     self:_diamond(x, y, size * 0.82, size * 0.82, layer, COLORS.sentry_dark)
     self:_rect(x - size * 0.5, y - size * 0.5, size, size, layer + 0.01, COLORS.sentry, 235)
     self:_rect(x - size * 0.5, y - size * 0.5, size, 1.5, layer + 0.015, COLORS.sentry_hot, 210)
@@ -509,6 +659,8 @@ function NoosphereBreachRenderer:_draw_cortex(enemy, layer)
     local pulse = 0.92 + (math_sin(phase * 1.6) + 1) * 0.08
 
     self:_draw_shadow(enemy, size * 0.85, layer - 0.04)
+    self:_glow(x, y, size * 2.8 * pulse, layer - 0.03, COLORS.cortex, 90, 5)
+    self:_glow(x, y, size * 4, 3.62, COLORS.cortex, 35, 4)
     self:_ring(x, y, size * 1.05 * pulse, size * 1.05 * pulse, 12, 2.2, layer - 0.02, COLORS.cortex, 95, phase * 0.07)
     self:_diamond(x, y, size * 0.78, size * 0.78, layer, COLORS.cortex_dark)
     self:_diamond(x, y, size * 0.56, size * 0.56, layer + 0.01, COLORS.cortex, 240)
@@ -613,7 +765,11 @@ function NoosphereBreachRenderer:_draw_projectiles(projectiles, hostile)
         local tail_x, tail_y = self:_project((projectile.x or 0) - velocity_x * 0.035, (projectile.y or 0) - velocity_y * 0.035, 0.42)
         local alpha = projectile.life and math_min(255, 105 + projectile.life * 150) or 240
 
+        self:_line(tail_x, tail_y, x, y, hostile and 6 or 7, layer - 0.002, color, alpha * 0.25)
         self:_line(tail_x, tail_y, x, y, hostile and 2.4 or 2.8, layer, color, alpha)
+        if i <= 36 then
+            self:_glow(x, y, hostile and 9 or 8, layer - 0.003, color, 110, 2)
+        end
         self:_rect(x - 1.5, y - 1.5, 3, 3, layer + 0.01, hostile and COLORS.warning or COLORS.white, 245)
     end
 end
@@ -635,6 +791,7 @@ function NoosphereBreachRenderer:_draw_particles(particles)
             or COLORS.particle
 
         if size > 3.8 then
+            self:_circle(x, y, size * 2.2, size * 2.2, layer - 0.001, color, color[1] * life * 0.18)
             self:_diamond(x, y, size, size, layer, color, color[1] * life)
         else
             self:_rect(x - size * 0.5, y - size * 0.5, size, size, layer, color, color[1] * life)
@@ -686,13 +843,20 @@ function NoosphereBreachRenderer:draw(ui_renderer, origin_x, origin_y, game)
     self._submission_count = 0
     self._submission_limit = MAX_SUBMISSIONS
 
+    local light_player = game:player()
+    self._light_x = light_player and (light_player.x or 0) - 0.5 or 0
+    self._light_y = light_player and (light_player.y or 0) - 0.5 or 0
+    self:_update_fx(game, time)
+
     self:_draw_environment(map, map_w, map_h, time)
     self:_draw_telegraphs(game:telegraphs())
     self:_draw_entities(game:player(), game:enemies())
     self:_draw_projectiles(game:player_projectiles(), false)
     self:_draw_projectiles(game:enemy_projectiles(), true)
     self:_draw_particles(game:particles())
+    self:_draw_fx()
     self:_draw_aim(game:player())
+    self:_draw_post(time)
 end
 
 return NoosphereBreachRenderer
