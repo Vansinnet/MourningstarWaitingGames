@@ -57,6 +57,12 @@ if not NoosphereBreachGame then
     return
 end
 
+local MinesweeperGame = mod:io_dofile("MourningstarWaitingGames/scripts/mods/MourningstarWaitingGames/Minesweeper_game")
+if not MinesweeperGame then
+    mod:error("MourningstarWaitingGames: failed to load Minesweeper_game")
+    return
+end
+
 local DAS_DELAY = 0.17
 local DAS_RATE = 0.05
 local das = {}
@@ -74,17 +80,19 @@ local is_pong = false
 local is_asteroids = false
 local is_raycaster = false
 local is_noosphere = false
+local is_minesweeper = false
 local look_input = 0
 local look_input_y = 0
 local look_pending = false
 local look_is_controller = false
 local snake_arrow_changed = false
 
-local GAME_TYPES = { "tetris", "invaders", "quiz", "snake", "pong", "asteroids", "raycaster", "noosphere" }
-local SELECTOR_LEFT = { 4, 1, 2, 3, 8, 5, 6, 7 }
-local SELECTOR_RIGHT = { 2, 3, 4, 1, 6, 7, 8, 5 }
-local SELECTOR_UP = { 5, 6, 7, 8, 1, 2, 3, 4 }
-local SELECTOR_DOWN = { 5, 6, 7, 8, 1, 2, 3, 4 }
+local GAME_TYPES = { "tetris", "invaders", "quiz", "snake", "pong", "asteroids", "raycaster", "noosphere", "minesweeper" }
+-- Five cards on the top row, four centred below.
+local SELECTOR_LEFT = { 5, 1, 2, 3, 4, 9, 6, 7, 8 }
+local SELECTOR_RIGHT = { 2, 3, 4, 5, 1, 7, 8, 9, 6 }
+local SELECTOR_UP = { 6, 6, 7, 8, 9, 2, 3, 4, 5 }
+local SELECTOR_DOWN = { 6, 6, 7, 8, 9, 2, 3, 4, 5 }
 local SELECTOR_INPUT_ACTIONS = {
     { "Ingame", "move_left" },
     { "Ingame", "move_right" },
@@ -175,7 +183,7 @@ local function _is_allowed()
     local ui = Managers.ui
     if ui and ui:has_active_view() then
         local top = ui:active_top_view()
-        if top and top ~= "game_selector_view" and top ~= "tetris_view" and top ~= "invaders_view" and top ~= "quiz_view" and top ~= "snake_view" and top ~= "pong_view" and top ~= "asteroids_view" and top ~= "raycaster_view" and top ~= "noosphere_breach_view" then
+        if top and top ~= "game_selector_view" and top ~= "tetris_view" and top ~= "invaders_view" and top ~= "quiz_view" and top ~= "snake_view" and top ~= "pong_view" and top ~= "asteroids_view" and top ~= "raycaster_view" and top ~= "noosphere_breach_view" and top ~= "minesweeper_view" then
             return false
         end
     end
@@ -308,6 +316,20 @@ local function _register_views()
 		view_options = { close_all = false, close_previous = false },
 	})
 	mod:io_dofile("MourningstarWaitingGames/scripts/mods/MourningstarWaitingGames/NoosphereBreach_view")
+
+	mod:add_require_path("MourningstarWaitingGames/scripts/mods/MourningstarWaitingGames/Minesweeper_view")
+	mod:register_view({
+		view_name = "minesweeper_view", view_settings = {
+			allow_hud = true, class = "MinesweeperView", close_on_hotkey_pressed = false,
+			disable_game_world = false, init_view_function = function() return true end,
+			load_always = true, load_in_hub = true,
+			package = "packages/ui/views/scanner_display_view/scanner_display_view",
+			path = "MourningstarWaitingGames/scripts/mods/MourningstarWaitingGames/Minesweeper_view",
+			state_bound = false, use_transition_ui = false,
+		}, view_transitions = {},
+		view_options = { close_all = false, close_previous = false },
+	})
+	mod:io_dofile("MourningstarWaitingGames/scripts/mods/MourningstarWaitingGames/Minesweeper_view")
 end
 
 local function _save_highscore(key, score)
@@ -350,6 +372,9 @@ local function _close_game(skip_ui_close)
         mod:echo(string.format("[Noosphere Breach] Score: %d  Wave: %d  Best chain: x%d",
             game:score(), game:wave(), game:best_multiplier()))
         _save_highscore("noosphere_highscore", game:score())
+    elseif game and cur_view == "minesweeper_view" then
+        local best = game:best_time(game:level())
+        mod:echo(string.format("[Minesweeper] %s  Best: %s", game:level_name(), best and (best .. "s") or "-"))
     end
 
     local ui = Managers.ui
@@ -408,6 +433,7 @@ local function _open_selector()
     is_asteroids = false
     is_raycaster = false
     is_noosphere = false
+    is_minesweeper = false
     game = nil
 
     if ui:view_active(cur_view) and not ui:is_view_closing(cur_view) then
@@ -465,10 +491,15 @@ local function _open_game(game_type)
     elseif game_type == "noosphere" then
         cur_view = "noosphere_breach_view"
         is_tetris = false; is_quiz = false; is_snake = false; is_pong = false; is_asteroids = false; is_raycaster = false; is_noosphere = true
+    elseif game_type == "minesweeper" then
+        cur_view = "minesweeper_view"
+        is_tetris = false; is_quiz = false; is_snake = false; is_pong = false; is_asteroids = false; is_raycaster = false; is_noosphere = false
     else
         cur_view = "tetris_view"
         is_tetris = true; is_quiz = false; is_snake = false; is_pong = false; is_asteroids = false; is_raycaster = false; is_noosphere = false
     end
+
+    is_minesweeper = game_type == "minesweeper"
 
     if ui:view_active(cur_view) or ui:is_view_closing(cur_view) then return end
 
@@ -502,6 +533,21 @@ local function _open_game(game_type)
         game:set_hit_callback(function() _play_sfx(QUIZ_WRONG_SFX) end)
         game:set_kill_callback(_play_land_sfx)
         game:set_wave_callback(_play_clear_sfx)
+        game:start()
+    elseif is_minesweeper then
+        game = MinesweeperGame:new({
+            get = function(key) return mod:get(key) end,
+            set = function(key, value) mod:set(key, value, false) end,
+            on_sound = function(kind)
+                if kind == "win" then
+                    _play_clear_sfx()
+                elseif kind == "lose" then
+                    _play_wrong_sfx()
+                else
+                    _play_land_sfx()
+                end
+            end,
+        })
         game:start()
     else
         game = SpaceInvadersGame:new()
@@ -666,6 +712,78 @@ local function _process_game_arrow(action, value)
     return 0
 end
 
+-- Minesweeper reads the mouse through the view's own cursor; only keys are routed here.
+local MINESWEEPER_POINTER_ACTIONS = {
+    cursor = true,
+    left_pressed = true, left_released = true, left_hold = true,
+    right_pressed = true, right_released = true, right_hold = true,
+    middle_pressed = true, middle_released = true, middle_hold = true,
+}
+local MINESWEEPER_DIRECTIONS = {
+    move_left = { -1, 0 }, move_right = { 1, 0 }, move_forward = { 0, -1 }, move_backward = { 0, 1 },
+    navigate_left_raw = { -1, 0 }, navigate_right_raw = { 1, 0 }, navigate_up_raw = { 0, -1 }, navigate_down_raw = { 0, 1 },
+}
+local MINESWEEPER_LEVEL_KEYS = { wield_1 = "beginner", wield_2 = "intermediate", wield_3 = "expert" }
+local MINESWEEPER_POLLED_ACTIONS = {
+    "move_left", "move_right", "move_forward", "move_backward",
+    "jump", "interact_pressed", "interact_inspect_pressed", "weapon_reload_pressed",
+    "wield_1", "wield_2", "wield_3", "wield_4", "tactical_overlay_pressed",
+}
+
+local function _process_minesweeper_input(action, r)
+    if action == "back" then
+        if _just(action, r) and not game:ui_back() then _close_game() end
+        return false
+    end
+
+    if MINESWEEPER_POINTER_ACTIONS[action] then return r end
+
+    local direction = MINESWEEPER_DIRECTIONS[action]
+    if direction then
+        local active = r == true or (type(r) == "number" and r > 0.5)
+        local was = prev_input[action]
+        prev_input[action] = active
+        if active and not was then
+            game:move_cursor(direction[1], direction[2])
+            das["ms_" .. action] = DAS_DELAY
+        elseif not active then
+            das["ms_" .. action] = nil
+        end
+        return 0
+    end
+
+    if action == "jump" then
+        if _just(action, r) then game:key_reveal() end
+        return false
+    end
+    if action == "interact_pressed" or action == "interact_inspect_pressed" then
+        if _just(action, r) then game:key_flag() end
+        return false
+    end
+    if action == "weapon_reload_pressed" then
+        if _just(action, r) then game:key_new() end
+        return false
+    end
+    if MINESWEEPER_LEVEL_KEYS[action] then
+        if _just(action, r) then game:key_level(MINESWEEPER_LEVEL_KEYS[action]) end
+        return false
+    end
+    if action == "wield_4" then
+        if _just(action, r) then game:key_marks() end
+        return false
+    end
+    if action == "tactical_overlay_pressed" then
+        if _just(action, r) then game:toggle_menu() end
+        return false
+    end
+    if action == "tactical_overlay_hold" then return false end
+
+    if action == "move" or LOOK_ACTIONS[action] then return Vector3(0, 0, 0) end
+    if SUPPRESSED[action] then return false end
+
+    return r
+end
+
 local function process_input(self, action, r)
     if not view_open then return r end
 
@@ -706,6 +824,8 @@ local function process_input(self, action, r)
     end
 
     if not game then return r end
+
+    if is_minesweeper then return _process_minesweeper_input(action, r) end
 
     if action == "back" and _just(action, r) then _close_game(); return false end
     if action == "action_two_pressed" and _just(action, r) then
@@ -980,6 +1100,11 @@ mod.update = function(dt)
 
         if is_tetris then
             _poll_input_action("Ingame", "weapon_reload_pressed")
+        elseif is_minesweeper then
+            for i = 1, #MINESWEEPER_POLLED_ACTIONS do
+                _poll_input_action("Ingame", MINESWEEPER_POLLED_ACTIONS[i])
+                if not view_open or not game then return end
+            end
         elseif is_noosphere then
             _poll_input_action("Ingame", "move_left")
             _poll_input_action("Ingame", "move_right")
@@ -1003,7 +1128,25 @@ mod.update = function(dt)
     end
     game_over_timer = nil
 
-    if is_tetris then
+    if is_minesweeper then
+        for key, timer in pairs(das) do
+            local direction = timer and MINESWEEPER_DIRECTIONS[string.sub(key, 4)]
+            if direction then
+                timer = timer - dt
+                if timer <= 0 then
+                    game:move_cursor(direction[1], direction[2])
+                    das[key] = DAS_RATE * 2 + timer
+                else
+                    das[key] = timer
+                end
+            end
+        end
+
+        if game:consume_close_request() then
+            _close_game()
+            return
+        end
+    elseif is_tetris then
         for key, timer in pairs(das) do
             if timer then
                 timer = timer - dt

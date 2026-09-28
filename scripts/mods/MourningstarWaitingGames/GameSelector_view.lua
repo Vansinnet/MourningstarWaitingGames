@@ -12,7 +12,7 @@ local math_pi = math.pi
 local math_sin = math.sin
 
 local RENDER_SIZE = 600
-local CARD_WIDTH = 128
+local CARD_WIDTH = 104
 local CARD_HEIGHT = 150
 
 local GAMES = {
@@ -24,17 +24,19 @@ local GAMES = {
     { label = "game_type_asteroids", description = "selector_desc_asteroids", highscore = "asteroids_highscore", color = { 255, 230, 80, 245 } },
     { label = "game_type_raycaster", description = "selector_desc_raycaster", highscore = "raycaster_highscore", color = { 255, 255, 190, 65 } },
     { label = "game_type_noosphere", description = "selector_desc_noosphere", highscore = "noosphere_highscore", color = { 255, 80, 230, 220 } },
+    { label = "game_type_minesweeper", description = "selector_desc_minesweeper", highscore = "minesweeper_highscore", color = { 255, 215, 220, 230 }, best_time = true },
 }
 
 local CARD_POSITIONS = {
-    { -210, -95 },
-    { -70, -95 },
-    { 70, -95 },
-    { 210, -95 },
-    { -210, 80 },
-    { -70, 80 },
-    { 70, 80 },
-    { 210, 80 },
+    { -224, -95 },
+    { -112, -95 },
+    { 0, -95 },
+    { 112, -95 },
+    { 224, -95 },
+    { -168, 80 },
+    { -56, 80 },
+    { 56, 80 },
+    { 168, 80 },
 }
 
 local COLORS = {
@@ -101,6 +103,7 @@ local ICONS = {
     { "0001000", "0001000", "0011100", "0011100", "0111110", "0110110", "1100011" },
     { "0011100", "0111110", "1100011", "1100011", "1100011", "1100011", "1100011" },
     { "0011100", "0100010", "1011101", "1010101", "1011101", "0100010", "0011100" },
+    { "0001000", "0101010", "0011100", "1111111", "0011100", "0101010", "0001000" },
 }
 
 local function card_definition(scenegraph_id, index)
@@ -159,7 +162,7 @@ local function card_definition(scenegraph_id, index)
                     pass_type = "texture",
                     value = "content/ui/materials/backgrounds/default_square",
                     style = { color = { 220, color[2], color[3], color[4] },
-                        size = { 3, 3 }, offset = { 50 + (x - 1) * 4, 19 + (y - 1) * 4, 4 } },
+                        size = { 3, 3 }, offset = { (CARD_WIDTH - 28) * 0.5 + (x - 1) * 4, 19 + (y - 1) * 4, 4 } },
                 }
             end
         end
@@ -331,7 +334,7 @@ function GameSelectorView:_draw_cards(canvas, base, t, selected_index)
 
         -- Icon halo sits between the card face and its pixel icon.
         local glow = selected and 110 + math_sin(t * 5) * 30 or 30
-        canvas:glow(x + 64, y + 31, selected and 34 or 24, 16.3, color, glow, 4)
+        canvas:glow(x + CARD_WIDTH * 0.5, y + 31, selected and 34 or 24, 16.3, color, glow, 4)
 
         if selected then
             canvas:sweep(x + 2, y + 2, w - 4, h - 4, t, 1.6, 20.4, color, 50, 40)
@@ -397,7 +400,13 @@ function GameSelectorView:_draw_widgets(dt, t, input_service, ui_renderer, rende
 
             widget.content.title = mod:localize(game.label)
             widget.content.description = mod:localize(game.description)
-            widget.content.best = mod:localize(game.highscore) .. " " .. (mod:get(game.highscore) or 0)
+            if game.best_time then
+                local level = mod:get("minesweeper_level") or "beginner"
+                local best = level ~= "custom" and tonumber(mod:get("minesweeper_best_" .. level)) or nil
+                widget.content.best = mod:localize(game.highscore) .. " " .. ((best and best > 0) and (best .. "s") or "-")
+            else
+                widget.content.best = mod:localize(game.highscore) .. " " .. (mod:get(game.highscore) or 0)
+            end
             set_color(widget.style.background.color, selected and COLORS.card_selected or COLORS.card)
             set_color(widget.style.frame.color, selected and game.color or COLORS.frame_dim, pulse)
             set_color(widget.style.accent.color, game.color, selected and 255 or 140)

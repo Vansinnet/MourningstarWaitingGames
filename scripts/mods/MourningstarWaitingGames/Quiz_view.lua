@@ -248,13 +248,17 @@ function QuizView:init(settings, context)
     for i = 1, 22 do
         self._data_columns[i] = { x = 18 + (i - 1) * 26.5, speed = 12 + (i * 29) % 30, seed = i * 7919 }
     end
+end
 
+-- Widgets exist only after the view package has loaded, so legacy panels are hidden on first draw.
+function QuizView:_hide_legacy_panel()
+    if self._legacy_hidden then return end
     local question_panel = self._widgets_by_name.question_panel
-    if question_panel then
-        for _, pass_style in pairs(question_panel.style) do
-            if pass_style.color then pass_style.color[1] = 0 end
-        end
+    if not question_panel then return end
+    for _, pass_style in pairs(question_panel.style) do
+        if type(pass_style) == "table" and pass_style.color then pass_style.color[1] = 0 end
     end
+    self._legacy_hidden = true
 end
 
 function QuizView:dialogue_system() return nil end
@@ -487,6 +491,7 @@ end
 
 function QuizView:_draw_widgets(dt, t, input_service, ui_renderer, render_settings)
     local game = self._game
+    self:_hide_legacy_panel()
     local hsw = self._widgets_by_name.highscore_text
     if hsw then hsw.content.text = mod:localize("quiz_highscore") .. " " .. (mod:get("quiz_highscore") or 0) end
 

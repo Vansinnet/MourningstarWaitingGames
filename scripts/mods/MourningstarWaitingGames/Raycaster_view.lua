@@ -355,6 +355,7 @@ function RaycasterView:update(dt, t, input_service)
 end
 
 function RaycasterView:_draw_widgets(dt, t, input_service, ui_renderer, render_settings)
+    self:_hide_legacy_vignette()
     if self._game then
         self:_update_hud()
     end
@@ -522,16 +523,22 @@ function RaycasterView:init(settings, context)
     self._last_score = nil
     self._pickup_flash = 0
     self._pickup_color = COLORS.gold
+end
 
-    -- The reworked renderer draws its own vignette.
+-- The reworked renderer draws its own vignette; widgets exist only after the package loads.
+function RaycasterView:_hide_legacy_vignette()
+    if self._legacy_hidden then return end
+    local found = false
     for _, name in ipairs({ "vignette_top", "vignette_bottom", "vignette_left", "vignette_right" }) do
         local widget = self._widgets_by_name[name]
         if widget then
+            found = true
             for _, pass_style in pairs(widget.style) do
-                if pass_style.color then pass_style.color[1] = 0 end
+                if type(pass_style) == "table" and pass_style.color then pass_style.color[1] = 0 end
             end
         end
     end
+    self._legacy_hidden = found
 end
 
 function RaycasterView:_project(x, y, horizon, sx)

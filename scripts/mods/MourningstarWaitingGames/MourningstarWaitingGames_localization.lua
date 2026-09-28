@@ -2,7 +2,7 @@ local mod = get_mod("MourningstarWaitingGames")
 
 return {
 	mod_name        = { en = "Mourningstar Waiting Games" },
-	mod_description = { en = "Open your auspex to play eight games, including Penitent Purge and Noosphere Breach, in the Mourningstar or Meat Grinder. Press F11 to start." },
+	mod_description = { en = "Open your auspex to play nine games, including Penitent Purge, Noosphere Breach and Minesweeper, in the Mourningstar or Meat Grinder. Press F11 to start." },
 
 	enable_tetris           = { en = "Enable Games" },
 	enable_tetris_tooltip   = { en = "Master switch for the minigames." },
@@ -14,13 +14,14 @@ return {
 		game_type_asteroids     = { en = "Asteroids" },
 		game_type_raycaster     = { en = "Penitent Purge" },
 		game_type_noosphere     = { en = "Noosphere Breach" },
+		game_type_minesweeper   = { en = "Minesweeper" },
 	game_toggle_key         = { en = "Open Game Auspex" },
 	game_toggle_key_tooltip = { en = "Open or close the game selector. Press it during a game to return to the selector." },
 	tetris_not_allowed      = { en = "Games can only be played in the Mourningstar or Meat Grinder." },
 	selector_title          = { en = "MOURNINGSTAR WAITING GAMES" },
 	selector_subtitle       = { en = "SELECT AUSPEX PROGRAM" },
 	selector_controls       = { en = "WASD / Arrows / Stick Select   Click / Enter / Space / E Launch   Esc Close" },
-	selector_status         = { en = "8 PROGRAMS ONLINE" },
+	selector_status         = { en = "9 PROGRAMS ONLINE" },
 	selector_desc_tetris    = { en = "Stack and clear" },
 	selector_desc_invaders  = { en = "Defend the sector" },
 	selector_desc_quiz      = { en = "Test forbidden lore" },
@@ -29,6 +30,7 @@ return {
 	selector_desc_asteroids = { en = "Survive the void" },
 	selector_desc_raycaster = { en = "Raid the reliquary" },
 	selector_desc_noosphere = { en = "Purge the noosphere" },
+	selector_desc_minesweeper = { en = "Clear the minefield" },
 
 	tetris_controls     = { en = "A/D or Left/Right Move   S/Down Drop   W/Up Hard Drop   E/Q Rotate   R Hold" },
 	invaders_controls   = { en = "A/D or Left/Right Move   LClick Fire   Esc Close" },
@@ -47,4 +49,5 @@ return {
 		asteroids_highscore  = { en = "Best:" },
 		raycaster_highscore  = { en = "Best:" },
 		noosphere_highscore  = { en = "Best:" },
+		minesweeper_highscore = { en = "Best:" },
 	}

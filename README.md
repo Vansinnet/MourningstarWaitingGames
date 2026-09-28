@@ -1,6 +1,6 @@
 # MourningstarWaitingGames
 
-A Darktide Mod Framework mod with an auspex-style selector for eight games in the Mourningstar and Meat Grinder, including persistent personal high scores and keyboard/controller support.
+A Darktide Mod Framework mod with an auspex-style selector for nine games in the Mourningstar and Meat Grinder, including persistent personal high scores and keyboard/controller support.
 
 ## Installation
 

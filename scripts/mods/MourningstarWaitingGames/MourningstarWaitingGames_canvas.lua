@@ -56,6 +56,7 @@ function Canvas.new(width, height, max_submissions)
         _gui = nil,
         _scale = 1,
         _base_layer = 0,
+        _layer_scale = 1,
         _ox = 0,
         _oy = 0,
         _dx = 0,
@@ -91,6 +92,12 @@ function Canvas:begin(ui_renderer, origin, layer_offset)
     self._cy1 = self._h
 
     return true
+end
+
+-- Gui orders rects and triangles by whole layers; a scale above 1 turns small
+-- fractional layer steps into distinct layers so shapes stack predictably.
+function Canvas:set_layer_scale(scale)
+    self._layer_scale = scale or 1
 end
 
 function Canvas:finish()
@@ -172,7 +179,7 @@ function Canvas:_submit_tri(x1, y1, x2, y2, x3, y3, layer, color)
         Vector3((ox + x1) * scale, 0, (oy + y1) * scale),
         Vector3((ox + x2) * scale, 0, (oy + y2) * scale),
         Vector3((ox + x3) * scale, 0, (oy + y3) * scale),
-        self._base_layer + layer,
+        self._base_layer + layer * self._layer_scale,
         color)
     self._count = self._count + 1
 end
@@ -231,7 +238,7 @@ function Canvas:rect_raw(x, y, width, height, layer, a, r, g, b)
     local scale = self._scale
 
     Gui.rect(self._gui,
-        Vector3((self._ox + x) * scale, (self._oy + y) * scale, self._base_layer + layer),
+        Vector3((self._ox + x) * scale, (self._oy + y) * scale, self._base_layer + layer * self._layer_scale),
         Vector2((x2 - x) * scale, (y2 - y) * scale),
         Color(math_floor(clamp_byte(a)), math_floor(clamp_byte(r)), math_floor(clamp_byte(g)), math_floor(clamp_byte(b))))
     self._count = self._count + 1
