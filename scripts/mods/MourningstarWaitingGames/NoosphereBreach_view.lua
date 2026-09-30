@@ -264,14 +264,6 @@ AuspexFrame.add(widget_definitions, {
     alpha = 170,
     z = 58,
 })
-AuspexFrame.add_inner_border(widget_definitions, {
-    render_size = RENDER_SIZE,
-    size = { GAME_W, GAME_H },
-    center = { 0, 6 },
-    prefix = "noosphere_game_border",
-    color = { 170, 30, 215, 184 },
-    z = 60,
-})
 
 local definitions = {
     scenegraph_definition = scenegraph,

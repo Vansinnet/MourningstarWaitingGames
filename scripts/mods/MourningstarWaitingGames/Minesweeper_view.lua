@@ -3,6 +3,7 @@ local UIWidget = require("scripts/managers/ui/ui_widget")
 local UIWorkspaceSettings = require("scripts/settings/ui/ui_workspace_settings")
 local AuspexFrame = mod:io_dofile("MourningstarWaitingGames/scripts/mods/MourningstarWaitingGames/MourningstarWaitingGames_auspex_frame")
 local Gfx = mod:io_dofile("MourningstarWaitingGames/scripts/mods/MourningstarWaitingGames/MourningstarWaitingGames_canvas")
+local Win95 = mod:io_dofile("MourningstarWaitingGames/scripts/mods/MourningstarWaitingGames/MourningstarWaitingGames_win95")
 
 local math_abs = math.abs
 local math_cos = math.cos
@@ -518,7 +519,7 @@ function MinesweeperView:_draw_desktop(canvas, t)
     canvas:rect(0, TASKBAR_Y + 1, RENDER_SIZE, 1, 0.61, C.light)
 
     panel(canvas, 3, TASKBAR_Y + 4, 58, 22, 0.62, false)
-    draw_mine(canvas, 15, TASKBAR_Y + 15, 14, 0.62)
+    Win95.logo(canvas, 8, TASKBAR_Y + 9, 12, 0.63, t)
     self:_text("Start", 24, TASKBAR_Y + 4, 36, 22, 12, C.text_black, "left", 1)
 
     panel(canvas, 66, TASKBAR_Y + 4, 150, 22, 0.62, true)

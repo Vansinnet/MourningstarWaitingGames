@@ -232,12 +232,6 @@ AuspexFrame.add(widget_definitions, {
     render_size = RENDER_SIZE,
     outline_size = { 620, 620 },
 })
-AuspexFrame.add_inner_border(widget_definitions, {
-    render_size = RENDER_SIZE,
-    size = { BOARD_W, BOARD_H },
-    center = { -25, 20 },
-    prefix = "tetris_board_border",
-})
 
 -- Fixed panel passes keep the ornament cost independent of the stack height.
 for name, panel in pairs({

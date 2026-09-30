@@ -63,6 +63,46 @@ if not MinesweeperGame then
     return
 end
 
+local SolitaireGame = mod:io_dofile("MourningstarWaitingGames/scripts/mods/MourningstarWaitingGames/Solitaire_game")
+if not SolitaireGame then
+    mod:error("MourningstarWaitingGames: failed to load Solitaire_game")
+    return
+end
+
+local HeartsGame = mod:io_dofile("MourningstarWaitingGames/scripts/mods/MourningstarWaitingGames/Hearts_game")
+if not HeartsGame then
+    mod:error("MourningstarWaitingGames: failed to load Hearts_game")
+    return
+end
+
+local SkiFreeGame = mod:io_dofile("MourningstarWaitingGames/scripts/mods/MourningstarWaitingGames/SkiFree_game")
+if not SkiFreeGame then
+    mod:error("MourningstarWaitingGames: failed to load SkiFree_game")
+    return
+end
+
+local BreakoutGame = mod:io_dofile("MourningstarWaitingGames/scripts/mods/MourningstarWaitingGames/Breakout_game")
+if not BreakoutGame then
+    mod:error("MourningstarWaitingGames: failed to load Breakout_game")
+    return
+end
+
+local BattleChessGame = mod:io_dofile("MourningstarWaitingGames/scripts/mods/MourningstarWaitingGames/BattleChess_game")
+if not BattleChessGame then
+    mod:error("MourningstarWaitingGames: failed to load BattleChess_game")
+    return
+end
+
+-- Windows 95 desktop apps: they own their menus and dialogs and take named keys.
+local APP_GAMES = {
+    solitaire = { view = "solitaire_view", class = SolitaireGame },
+    hearts = { view = "hearts_view", class = HeartsGame },
+    skifree = { view = "skifree_view", class = SkiFreeGame },
+    breakout = { view = "breakout_view", class = BreakoutGame },
+    battlechess = { view = "battlechess_view", class = BattleChessGame },
+}
+local APP_VIEWS = { solitaire_view = true, hearts_view = true, skifree_view = true, breakout_view = true, battlechess_view = true }
+
 local DAS_DELAY = 0.17
 local DAS_RATE = 0.05
 local das = {}
@@ -81,18 +121,18 @@ local is_asteroids = false
 local is_raycaster = false
 local is_noosphere = false
 local is_minesweeper = false
+local is_app = false
+local app_sources = {}
+local app_held = {}
 local look_input = 0
 local look_input_y = 0
 local look_pending = false
 local look_is_controller = false
 local snake_arrow_changed = false
 
-local GAME_TYPES = { "tetris", "invaders", "quiz", "snake", "pong", "asteroids", "raycaster", "noosphere", "minesweeper" }
--- Five cards on the top row, four centred below.
-local SELECTOR_LEFT = { 5, 1, 2, 3, 4, 9, 6, 7, 8 }
-local SELECTOR_RIGHT = { 2, 3, 4, 5, 1, 7, 8, 9, 6 }
-local SELECTOR_UP = { 6, 6, 7, 8, 9, 2, 3, 4, 5 }
-local SELECTOR_DOWN = { 6, 6, 7, 8, 9, 2, 3, 4, 5 }
+local GAME_TYPES = { "tetris", "invaders", "quiz", "snake", "pong", "asteroids", "raycaster", "noosphere", "minesweeper", "solitaire", "hearts", "skifree", "breakout", "battlechess" }
+-- The selector shows the games in rows of five; a shorter last row is centred.
+local SELECTOR_COLUMNS = 5
 local SELECTOR_INPUT_ACTIONS = {
     { "Ingame", "move_left" },
     { "Ingame", "move_right" },
@@ -183,7 +223,7 @@ local function _is_allowed()
     local ui = Managers.ui
     if ui and ui:has_active_view() then
         local top = ui:active_top_view()
-        if top and top ~= "game_selector_view" and top ~= "tetris_view" and top ~= "invaders_view" and top ~= "quiz_view" and top ~= "snake_view" and top ~= "pong_view" and top ~= "asteroids_view" and top ~= "raycaster_view" and top ~= "noosphere_breach_view" and top ~= "minesweeper_view" then
+        if top and top ~= "game_selector_view" and top ~= "tetris_view" and top ~= "invaders_view" and top ~= "quiz_view" and top ~= "snake_view" and top ~= "pong_view" and top ~= "asteroids_view" and top ~= "raycaster_view" and top ~= "noosphere_breach_view" and top ~= "minesweeper_view" and not APP_VIEWS[top] then
             return false
         end
     end
@@ -330,6 +370,29 @@ local function _register_views()
 		view_options = { close_all = false, close_previous = false },
 	})
 	mod:io_dofile("MourningstarWaitingGames/scripts/mods/MourningstarWaitingGames/Minesweeper_view")
+
+	local function register_app_view(view_name, class_name, file)
+		local path = "MourningstarWaitingGames/scripts/mods/MourningstarWaitingGames/" .. file
+		mod:add_require_path(path)
+		mod:register_view({
+			view_name = view_name, view_settings = {
+				allow_hud = true, class = class_name, close_on_hotkey_pressed = false,
+				disable_game_world = false, init_view_function = function() return true end,
+				load_always = true, load_in_hub = true,
+				package = "packages/ui/views/scanner_display_view/scanner_display_view",
+				path = path,
+				state_bound = false, use_transition_ui = false,
+			}, view_transitions = {},
+			view_options = { close_all = false, close_previous = false },
+		})
+		mod:io_dofile(path)
+	end
+
+	register_app_view("solitaire_view", "SolitaireView", "Solitaire_view")
+	register_app_view("hearts_view", "HeartsView", "Hearts_view")
+	register_app_view("skifree_view", "SkiFreeView", "SkiFree_view")
+	register_app_view("breakout_view", "BreakoutView", "Breakout_view")
+	register_app_view("battlechess_view", "BattleChessView", "BattleChess_view")
 end
 
 local function _save_highscore(key, score)
@@ -375,6 +438,8 @@ local function _close_game(skip_ui_close)
     elseif game and cur_view == "minesweeper_view" then
         local best = game:best_time(game:level())
         mod:echo(string.format("[Minesweeper] %s  Best: %s", game:level_name(), best and (best .. "s") or "-"))
+    elseif game and APP_VIEWS[cur_view] then
+        mod:echo(game:summary())
     end
 
     local ui = Managers.ui
@@ -392,6 +457,8 @@ local function _close_game(skip_ui_close)
     cur_view = nil
     for k in pairs(das) do das[k] = nil end
     for k in pairs(prev_input) do prev_input[k] = nil end
+    for k in pairs(app_sources) do app_sources[k] = nil end
+    for k in pairs(app_held) do app_held[k] = nil end
     look_input = 0
     look_input_y = 0
     look_pending = false
@@ -434,6 +501,7 @@ local function _open_selector()
     is_raycaster = false
     is_noosphere = false
     is_minesweeper = false
+    is_app = false
     game = nil
 
     if ui:view_active(cur_view) and not ui:is_view_closing(cur_view) then
@@ -494,12 +562,16 @@ local function _open_game(game_type)
     elseif game_type == "minesweeper" then
         cur_view = "minesweeper_view"
         is_tetris = false; is_quiz = false; is_snake = false; is_pong = false; is_asteroids = false; is_raycaster = false; is_noosphere = false
+    elseif APP_GAMES[game_type] then
+        cur_view = APP_GAMES[game_type].view
+        is_tetris = false; is_quiz = false; is_snake = false; is_pong = false; is_asteroids = false; is_raycaster = false; is_noosphere = false
     else
         cur_view = "tetris_view"
         is_tetris = true; is_quiz = false; is_snake = false; is_pong = false; is_asteroids = false; is_raycaster = false; is_noosphere = false
     end
 
     is_minesweeper = game_type == "minesweeper"
+    is_app = APP_GAMES[game_type] ~= nil
 
     if ui:view_active(cur_view) or ui:is_view_closing(cur_view) then return end
 
@@ -549,6 +621,21 @@ local function _open_game(game_type)
             end,
         })
         game:start()
+    elseif is_app then
+        game = APP_GAMES[game_type].class:new({
+            get = function(key) return mod:get(key) end,
+            set = function(key, value) mod:set(key, value, false) end,
+            on_sound = function(kind)
+                if kind == "win" then
+                    _play_clear_sfx()
+                elseif kind == "lose" then
+                    _play_wrong_sfx()
+                else
+                    _play_land_sfx()
+                end
+            end,
+        })
+        game:start()
     else
         game = SpaceInvadersGame:new()
         game:start()
@@ -560,19 +647,39 @@ local function _open_game(game_type)
     opening = false
 end
 
+-- Esc, Exit and the window close button in a game return to the game selector.
+local function _back_to_selector(from_esc)
+    _close_game()
+    _open_selector()
+    -- The same Esc press must not close the selector as well.
+    if from_esc then prev_input["back"] = true end
+end
+
+local function _selector_row_size(row)
+    return math.min(SELECTOR_COLUMNS, #GAME_TYPES - row * SELECTOR_COLUMNS)
+end
+
 local function _move_selector(direction)
-    local selected = selector_state.selected
+    local count = #GAME_TYPES
+    local rows = math.ceil(count / SELECTOR_COLUMNS)
+    local index = selector_state.selected - 1
+    local row = math.floor(index / SELECTOR_COLUMNS)
+    local col = index % SELECTOR_COLUMNS
+    local size = _selector_row_size(row)
 
     if direction == "left" then
-        selector_state.selected = SELECTOR_LEFT[selected]
+        col = (col - 1) % size
     elseif direction == "right" then
-        selector_state.selected = SELECTOR_RIGHT[selected]
-    elseif direction == "up" then
-        selector_state.selected = SELECTOR_UP[selected]
+        col = (col + 1) % size
     else
-        selector_state.selected = SELECTOR_DOWN[selected]
+        -- Keep the horizontal position; rows shorter than the rest are centred.
+        local x = col - (size - 1) * 0.5
+        row = (row + (direction == "up" and -1 or 1)) % rows
+        size = _selector_row_size(row)
+        col = math.max(0, math.min(size - 1, math.floor(x + (size - 1) * 0.5 + 0.5)))
     end
 
+    selector_state.selected = row * SELECTOR_COLUMNS + col + 1
     _play_land_sfx()
 end
 
@@ -630,6 +737,8 @@ local function _clear_game_input()
     look_pending = false
     look_is_controller = false
     snake_arrow_changed = false
+    for key in pairs(app_sources) do app_sources[key] = nil end
+    for key in pairs(app_held) do app_held[key] = nil end
 end
 
 local function _poll_input_action(service_name, action)
@@ -730,9 +839,18 @@ local MINESWEEPER_POLLED_ACTIONS = {
     "wield_1", "wield_2", "wield_3", "wield_4", "tactical_overlay_pressed",
 }
 
+-- Accepts a key press unless the same key was pressed in this or the previous update.
+local press_tick = 0
+local press_ticks = {}
+local function _fresh_press(key)
+    local last = press_ticks[key]
+    press_ticks[key] = press_tick
+    return not last or press_tick - last > 1
+end
+
 local function _process_minesweeper_input(action, r)
     if action == "back" then
-        if _just(action, r) and not game:ui_back() then _close_game() end
+        if _just(action, r) and not game:ui_back() then _back_to_selector(true) end
         return false
     end
 
@@ -752,10 +870,11 @@ local function _process_minesweeper_input(action, r)
         return 0
     end
 
-    if action == "jump" then
-        if _just(action, r) then game:key_reveal() end
+    if action == "jump" or action == "next" then
+        if _just(action, r) and _fresh_press("reveal") then game:key_reveal() end
         return false
     end
+    if action == "next_hold" then return false end
     if action == "interact_pressed" or action == "interact_inspect_pressed" then
         if _just(action, r) then game:key_flag() end
         return false
@@ -778,6 +897,87 @@ local function _process_minesweeper_input(action, r)
     end
     if action == "tactical_overlay_hold" then return false end
 
+    if action == "move" or LOOK_ACTIONS[action] then return Vector3(0, 0, 0) end
+    if SUPPRESSED[action] then return false end
+
+    return r
+end
+
+local APP_DIRECTIONS = {
+    move_left = "left", move_right = "right", move_forward = "up", move_backward = "down",
+    navigate_left_raw = "left", navigate_right_raw = "right", navigate_up_raw = "up", navigate_down_raw = "down",
+}
+local APP_PRESS_KEYS = {
+    jump = "confirm", interact_pressed = "alt", interact_inspect_pressed = "alt",
+    weapon_reload_pressed = "new", quick_wield = "undo", tactical_overlay_pressed = "menu",
+    wield_1 = "1", wield_2 = "2", wield_3 = "3", wield_4 = "4",
+}
+-- Space reaches views as the View action "next" (the Ingame "jump" may be filtered while a view
+-- is open), Enter as "confirm_pressed"; one physical press can arrive through both services.
+APP_PRESS_KEYS.next = "confirm"
+APP_PRESS_KEYS.confirm_pressed = "confirm"
+local APP_HOLD_KEYS = { sprinting = "fast", jump_held = "confirm", next_hold = "confirm" }
+local APP_VIEW_POLLED_ACTIONS = { "next", "next_hold", "confirm_pressed" }
+local APP_POLLED_ACTIONS = {
+    "move_left", "move_right", "move_forward", "move_backward",
+    "jump", "jump_held", "sprinting", "interact_pressed", "interact_inspect_pressed", "weapon_reload_pressed",
+    "quick_wield", "wield_1", "wield_2", "wield_3", "wield_4", "tactical_overlay_pressed",
+}
+
+-- Several actions can hold the same key (W and Up); the key is held while any of them is.
+local function _set_app_source(action, key, active)
+    if (app_sources[action] or false) == active then return end
+    app_sources[action] = active
+
+    local held = false
+    for source, source_key in pairs(APP_DIRECTIONS) do
+        if source_key == key and app_sources[source] then held = true end
+    end
+    for source, source_key in pairs(APP_HOLD_KEYS) do
+        if source_key == key and app_sources[source] then held = true end
+    end
+
+    if (app_held[key] or false) ~= held then
+        app_held[key] = held
+        game:key_hold(key, held)
+    end
+end
+
+local function _process_app_input(action, r)
+    if action == "back" then
+        if _just(action, r) and not game:ui_back() then _back_to_selector(true) end
+        return false
+    end
+
+    if MINESWEEPER_POINTER_ACTIONS[action] then return r end
+
+    local key = APP_DIRECTIONS[action]
+    if key then
+        local active = r == true or (type(r) == "number" and r > 0.5)
+        local was = app_sources[action] or false
+        _set_app_source(action, key, active)
+        if active and not was then
+            game:key_press(key, false)
+            das["app_" .. action] = DAS_DELAY
+        elseif not active then
+            das["app_" .. action] = nil
+        end
+        return 0
+    end
+
+    key = APP_HOLD_KEYS[action]
+    if key then
+        _set_app_source(action, key, _input_active(r))
+        return false
+    end
+
+    key = APP_PRESS_KEYS[action]
+    if key then
+        if _just(action, r) and _fresh_press(key) then game:key_press(key, false) end
+        return false
+    end
+
+    if action == "tactical_overlay_hold" then return false end
     if action == "move" or LOOK_ACTIONS[action] then return Vector3(0, 0, 0) end
     if SUPPRESSED[action] then return false end
 
@@ -826,8 +1026,9 @@ local function process_input(self, action, r)
     if not game then return r end
 
     if is_minesweeper then return _process_minesweeper_input(action, r) end
+    if is_app then return _process_app_input(action, r) end
 
-    if action == "back" and _just(action, r) then _close_game(); return false end
+    if action == "back" and _just(action, r) then _back_to_selector(true); return false end
     if action == "action_two_pressed" and _just(action, r) then
         if is_raycaster then game:dash() else _close_game() end
         return false
@@ -909,7 +1110,7 @@ local function process_input(self, action, r)
         end
         if action == "move" or action == "look" then return Vector3(0, 0, 0) end
     elseif is_pong then
-        if action == "back" and _just(action, r) then _close_game(); return false end
+        if action == "back" and _just(action, r) then _back_to_selector(true); return false end
         if action == "action_two_pressed" and _just(action, r) then _close_game(); return false end
         if action == "move_forward" then
             prev_input[action] = (type(r) == "boolean" and r) or (type(r) == "number" and r > 0)
@@ -922,7 +1123,7 @@ local function process_input(self, action, r)
         if action == "move" or action == "look" then return Vector3(0, 0, 0) end
         if SUPPRESSED[action] then return false end
     elseif is_asteroids then
-        if action == "back" and _just(action, r) then _close_game(); return false end
+        if action == "back" and _just(action, r) then _back_to_selector(true); return false end
         if action == "action_two_pressed" and _just(action, r) then _close_game(); return false end
         if action == "move_left" then
             prev_input[action] = (type(r) == "boolean" and r) or (type(r) == "number" and r > 0)
@@ -945,7 +1146,7 @@ local function process_input(self, action, r)
         if action == "move" or action == "look" then return Vector3(0, 0, 0) end
         if SUPPRESSED[action] then return false end
     elseif is_raycaster then
-        if action == "back" and _just(action, r) then _close_game(); return false end
+        if action == "back" and _just(action, r) then _back_to_selector(true); return false end
         if action == "move_left" then
             prev_input[action] = _input_strength(r)
             return 0
@@ -980,7 +1181,7 @@ local function process_input(self, action, r)
         if action == "move" then return Vector3(0, 0, 0) end
         if SUPPRESSED[action] then return false end
     elseif is_noosphere then
-        if action == "back" and _just(action, r) then _close_game(); return false end
+        if action == "back" and _just(action, r) then _back_to_selector(true); return false end
         if action == "move_left" or action == "move_right" or action == "move_forward" or action == "move_backward" then
             prev_input[action] = _input_strength(r)
             return 0
@@ -1058,6 +1259,7 @@ pcall(function() mod:hook(CLASS.InputService, "_get_simulate", input_hook) end)
 
 mod.update = function(dt)
     if not mod:is_enabled() then return end
+    press_tick = press_tick + 1
     if not view_open then return end
 
     local top_view = Managers.ui and Managers.ui:active_top_view()
@@ -1105,6 +1307,17 @@ mod.update = function(dt)
                 _poll_input_action("Ingame", MINESWEEPER_POLLED_ACTIONS[i])
                 if not view_open or not game then return end
             end
+            _poll_input_action("View", "next")
+            if not view_open or not game then return end
+        elseif is_app then
+            for i = 1, #APP_POLLED_ACTIONS do
+                _poll_input_action("Ingame", APP_POLLED_ACTIONS[i])
+                if not view_open or not game then return end
+            end
+            for i = 1, #APP_VIEW_POLLED_ACTIONS do
+                _poll_input_action("View", APP_VIEW_POLLED_ACTIONS[i])
+                if not view_open or not game then return end
+            end
         elseif is_noosphere then
             _poll_input_action("Ingame", "move_left")
             _poll_input_action("Ingame", "move_right")
@@ -1143,7 +1356,25 @@ mod.update = function(dt)
         end
 
         if game:consume_close_request() then
-            _close_game()
+            _back_to_selector()
+            return
+        end
+    elseif is_app then
+        for das_key, timer in pairs(das) do
+            local key = timer and APP_DIRECTIONS[string.sub(das_key, 5)]
+            if key then
+                timer = timer - dt
+                if timer <= 0 then
+                    game:key_press(key, true)
+                    das[das_key] = DAS_RATE * 2 + timer
+                else
+                    das[das_key] = timer
+                end
+            end
+        end
+
+        if game:consume_close_request() then
+            _back_to_selector()
             return
         end
     elseif is_tetris then

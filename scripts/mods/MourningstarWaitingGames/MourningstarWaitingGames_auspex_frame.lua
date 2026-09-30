@@ -1,7 +1,6 @@
 local UIWidget = require("scripts/managers/ui/ui_widget")
 
 local FRAME_TEXTURE = "content/ui/materials/dividers/horizontal_frame_big_lower"
-local OUTLINE_TEXTURE = "content/ui/materials/frames/frame_tile_2px"
 
 local AuspexFrame = {}
 
@@ -27,7 +26,10 @@ function AuspexFrame.add(widget_definitions, settings)
     local backdrop_z = settings.backdrop_z or -2
     local backdrop_alpha = settings.backdrop_alpha or 235
     local color_alpha = settings.alpha or 144
-    local outline_alpha = settings.outline_alpha or 70
+    -- The four frame pieces reach past the backdrop so their ends meet in shared corners.
+    local extend = settings.frame_extend or rounded(frame_height * 0.4)
+    local span_w = width + extend * 2
+    local span_h = height + extend * 2
 
     widget_definitions.auspex_backdrop = UIWidget.create_definition({
         {
@@ -49,11 +51,11 @@ function AuspexFrame.add(widget_definitions, settings)
             style = {
                 angle = math.rad(180),
                 color = scanner_green(color_alpha),
-                offset = { left, top + frame_margin, z + 1 },
+                offset = { left - extend, top + frame_margin, z + 1 },
                 pivot = {},
             },
         },
-    }, "scanner_base", nil, { width, frame_height })
+    }, "scanner_base", nil, { span_w, frame_height })
 
     widget_definitions.auspex_frame_bottom = UIWidget.create_definition({
         {
@@ -62,10 +64,10 @@ function AuspexFrame.add(widget_definitions, settings)
             value = FRAME_TEXTURE,
             style = {
                 color = scanner_green(color_alpha),
-                offset = { left, top + height - frame_height - frame_margin, z + 1 },
+                offset = { left - extend, top + height - frame_height - frame_margin, z + 1 },
             },
         },
-    }, "scanner_base", nil, { width, frame_height })
+    }, "scanner_base", nil, { span_w, frame_height })
 
     widget_definitions.auspex_frame_left = UIWidget.create_definition({
         {
@@ -76,14 +78,14 @@ function AuspexFrame.add(widget_definitions, settings)
                 angle = math.rad(-90),
                 color = scanner_green(color_alpha),
                 offset = {
-                    left + frame_margin + frame_height * 0.5 - height * 0.5,
+                    left + frame_margin + frame_height * 0.5 - span_h * 0.5,
                     top + (height - frame_height) * 0.5,
                     z + 1,
                 },
                 pivot = {},
             },
         },
-    }, "scanner_base", nil, { height, frame_height })
+    }, "scanner_base", nil, { span_h, frame_height })
 
     widget_definitions.auspex_frame_right = UIWidget.create_definition({
         {
@@ -94,73 +96,14 @@ function AuspexFrame.add(widget_definitions, settings)
                 angle = math.rad(90),
                 color = scanner_green(color_alpha),
                 offset = {
-                    left + width - frame_margin - frame_height * 0.5 - height * 0.5,
+                    left + width - frame_margin - frame_height * 0.5 - span_h * 0.5,
                     top + (height - frame_height) * 0.5,
                     z + 1,
                 },
                 pivot = {},
             },
         },
-    }, "scanner_base", nil, { height, frame_height })
-
-    widget_definitions.auspex_outline = UIWidget.create_definition({
-        {
-            pass_type = "texture",
-            style_id = "frame",
-            value = OUTLINE_TEXTURE,
-            style = {
-                color = scanner_green(outline_alpha),
-                scale_to_material = true,
-                offset = { left, top, z },
-            },
-        },
-    }, "scanner_base", nil, { width, height })
-end
-
-function AuspexFrame.add_inner_border(widget_definitions, settings)
-    local render_size = settings.render_size or 600
-    local size = settings.size or { render_size, render_size }
-    local center = settings.center or { 0, 0 }
-    local width = size[1]
-    local height = size[2]
-    local thickness = settings.thickness or 2
-    local z = settings.z or 14
-    local prefix = settings.prefix or "auspex_inner"
-    local color = settings.color or scanner_green(settings.alpha or 115)
-    local left = (render_size - width) * 0.5 + (center[1] or 0)
-    local top = (render_size - height) * 0.5 + (center[2] or 0)
-
-    widget_definitions[prefix .. "_top"] = UIWidget.create_definition({
-        {
-            pass_type = "texture",
-            value = "content/ui/materials/backgrounds/default_square",
-            style = { hdr = true, color = color, offset = { left, top, z } },
-        },
-    }, "scanner_base", nil, { width, thickness })
-
-    widget_definitions[prefix .. "_bottom"] = UIWidget.create_definition({
-        {
-            pass_type = "texture",
-            value = "content/ui/materials/backgrounds/default_square",
-            style = { hdr = true, color = color, offset = { left, top + height - thickness, z } },
-        },
-    }, "scanner_base", nil, { width, thickness })
-
-    widget_definitions[prefix .. "_left"] = UIWidget.create_definition({
-        {
-            pass_type = "texture",
-            value = "content/ui/materials/backgrounds/default_square",
-            style = { hdr = true, color = color, offset = { left, top, z } },
-        },
-    }, "scanner_base", nil, { thickness, height })
-
-    widget_definitions[prefix .. "_right"] = UIWidget.create_definition({
-        {
-            pass_type = "texture",
-            value = "content/ui/materials/backgrounds/default_square",
-            style = { hdr = true, color = color, offset = { left + width - thickness, top, z } },
-        },
-    }, "scanner_base", nil, { thickness, height })
+    }, "scanner_base", nil, { span_h, frame_height })
 end
 
 return AuspexFrame

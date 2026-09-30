@@ -305,13 +305,6 @@ AuspexFrame.add(widget_definitions, {
     backdrop_alpha = 248,
     alpha = 170,
 })
-AuspexFrame.add_inner_border(widget_definitions, {
-    render_size = RENDER_SIZE,
-    size = { VIEW_W, VIEW_H },
-    center = { 0, 6 },
-    prefix = "raycaster_game_border",
-    color = { 145, 40, 215, 190 },
-})
 
 local definitions = { scenegraph_definition = scenegraph, widget_definitions = widget_definitions }
 local RaycasterView = class("RaycasterView", "BaseView")

@@ -123,6 +123,10 @@ function Canvas:reset_clip()
     self._cy1 = self._h
 end
 
+function Canvas:get_clip()
+    return self._cx0, self._cy0, self._cx1, self._cy1
+end
+
 function Canvas:submissions()
     return self._count
 end

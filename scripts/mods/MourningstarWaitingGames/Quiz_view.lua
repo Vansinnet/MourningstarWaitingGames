@@ -214,13 +214,6 @@ AuspexFrame.add(widget_definitions, {
     outline_size = { 580, 560 },
     center = { 0, 10 },
 })
-AuspexFrame.add_inner_border(widget_definitions, {
-    render_size = RENDER_SIZE,
-    size = { 540, 500 },
-    center = { 0, 15 },
-    prefix = "quiz_panel_border",
-    alpha = 85,
-})
 
 local definitions = { scenegraph_definition = scenegraph, widget_definitions = widget_definitions }
 

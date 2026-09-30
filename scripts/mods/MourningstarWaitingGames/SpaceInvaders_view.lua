@@ -309,11 +309,6 @@ AuspexFrame.add(widget_definitions, {
     render_size = RENDER_SIZE,
     outline_size = { 620, 620 },
 })
-AuspexFrame.add_inner_border(widget_definitions, {
-    render_size = RENDER_SIZE,
-    size = { GAME_W, GAME_H },
-    prefix = "invaders_game_border",
-})
 
 local definitions = { scenegraph_definition = scenegraph, widget_definitions = widget_definitions }
 

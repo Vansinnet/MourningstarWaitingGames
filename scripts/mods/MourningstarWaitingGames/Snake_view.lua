@@ -195,12 +195,6 @@ AuspexFrame.add(widget_definitions, {
     outline_size = { 640, 740 },
     center = { 0, 20 },
 })
-AuspexFrame.add_inner_border(widget_definitions, {
-    render_size = RENDER_SIZE,
-    size = { COLS * GRID, ROWS * GRID },
-    center = { 0, 20 },
-    prefix = "snake_board_border",
-})
 
 for name, y in pairs({ header = -333, footer = 326 }) do
     widget_definitions["hud_panel_" .. name] = UIWidget.create_definition({

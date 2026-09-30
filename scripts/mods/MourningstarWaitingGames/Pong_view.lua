@@ -217,11 +217,6 @@ AuspexFrame.add(widget_definitions, {
     outline_size = { 640, 590 },
     center = { 0, -15 },
 })
-AuspexFrame.add_inner_border(widget_definitions, {
-    render_size = RENDER_SIZE,
-    size = { BOARD_W, BOARD_H },
-    prefix = "pong_game_border",
-})
 
 for side = 1, 2 do
     local accent = side == 1 and COLORS.paddle or COLORS.cpu

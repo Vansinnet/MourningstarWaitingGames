@@ -1,6 +1,8 @@
 # MourningstarWaitingGames
 
-A Darktide Mod Framework mod with an auspex-style selector for nine games in the Mourningstar and Meat Grinder, including persistent personal high scores and keyboard/controller support.
+Current release: **1.9.0**.
+
+A Darktide Mod Framework mod with an auspex-style selector for fourteen games in the Mourningstar and Meat Grinder, including a real-3D Battle Chess and Windows 95-style Minesweeper, Solitaire, Hearts, SkiFree and Breakout, persistent personal high scores and keyboard/controller support.
 
 ## Installation
 
